@@ -46,4 +46,42 @@ describe("loadConfig", () => {
       expect((error as Error).message).toContain("TELEGRAM_BOT_TOKEN");
     }
   });
+
+  it("accepts BOT_TOKEN as an alias for the Telegram token", () => {
+    const { TELEGRAM_BOT_TOKEN: _omitted, ...rest } = VALID_ENV;
+    const config = loadConfig({ ...rest, BOT_TOKEN: "123456789:AAVercelToken" });
+    expect(config.telegramBotToken).toBe("123456789:AAVercelToken");
+  });
+
+  it("prefers TELEGRAM_BOT_TOKEN when both are set", () => {
+    const config = loadConfig({ ...VALID_ENV, BOT_TOKEN: "123456789:AAOther" });
+    expect(config.telegramBotToken).toBe(VALID_ENV.TELEGRAM_BOT_TOKEN);
+  });
+
+  it("throws when neither TELEGRAM_BOT_TOKEN nor BOT_TOKEN is set", () => {
+    const { TELEGRAM_BOT_TOKEN: _omitted, ...rest } = VALID_ENV;
+    expect(() => loadConfig(rest)).toThrow(ConfigError);
+  });
+
+  it("parses the optional webhook secret and URL", () => {
+    const config = loadConfig({
+      ...VALID_ENV,
+      TELEGRAM_WEBHOOK_SECRET: "a-Good_secret-123",
+      TELEGRAM_WEBHOOK_URL: "https://job-scout.vercel.app",
+    });
+    expect(config.webhookSecret).toBe("a-Good_secret-123");
+    expect(config.webhookUrl).toBe("https://job-scout.vercel.app");
+  });
+
+  it("rejects an invalid webhook secret", () => {
+    expect(() =>
+      loadConfig({ ...VALID_ENV, TELEGRAM_WEBHOOK_SECRET: "not a valid secret!" }),
+    ).toThrow(ConfigError);
+  });
+
+  it("rejects an invalid webhook URL", () => {
+    expect(() =>
+      loadConfig({ ...VALID_ENV, TELEGRAM_WEBHOOK_URL: "not-a-url" }),
+    ).toThrow(ConfigError);
+  });
 });

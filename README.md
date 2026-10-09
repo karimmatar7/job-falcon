@@ -81,9 +81,9 @@ Declared dependencies (`package.json`):
 
 ## Prerequisites
 
-- **Node.js 20 or newer** (LTS recommended). The project targets ES2022 and
-  uses modern ESM; no `engines` field is declared, but the dev tooling
-  (Vitest 5, `tsx`) requires a current Node runtime.
+- **Node.js 20 or newer** (LTS recommended). The project targets ES2022, uses
+  modern ESM, and declares `"engines": { "node": ">=20" }` in `package.json`
+  (matching the minimum Vercel expects).
 - **npm** (bundled with Node.js).
 - **Git** (to clone the repository).
 - A **Telegram account**.
@@ -103,7 +103,7 @@ npm install
 Copy-Item .env.example .env
 ```
 
-Open `.env` and fill in the two values (see
+Open `.env` and fill in the required values (see
 [Environment configuration](#environment-configuration)), then start the bot:
 
 ```powershell
@@ -120,15 +120,24 @@ Press `Ctrl+C` to stop it.
 The source of truth is [`.env.example`](.env.example). Copy it to `.env` and set
 the values:
 
-| Variable                   | Required | Description                                                      |
-| -------------------------- | -------- | ---------------------------------------------------------------- |
-| `TELEGRAM_BOT_TOKEN`       | Yes      | Bot token from BotFather. Format: `<digits>:<letters/underscores>`. |
-| `TELEGRAM_ALLOWED_USER_ID` | Yes      | Numeric Telegram user ID allowed to use the bot.                 |
+| Variable                   | Required            | Description                                                                 |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------- |
+| `TELEGRAM_BOT_TOKEN`       | Yes\*               | Bot token from BotFather. Format: `<digits>:<letters/underscores>`.          |
+| `TELEGRAM_ALLOWED_USER_ID` | Yes                 | Numeric Telegram user ID allowed to use the bot.                            |
+| `BOT_TOKEN`                | Alias for the token | Alternative name for `TELEGRAM_BOT_TOKEN`, convenient on Vercel.            |
+| `TELEGRAM_WEBHOOK_SECRET`  | Webhook mode        | 1–256 chars of `A-Z a-z 0-9 _ -`; required when running via webhooks.       |
+| `TELEGRAM_WEBHOOK_URL`     | Optional            | Public deployment base URL, used by `npm run set-webhook`.                  |
+
+\* Provide **either** `TELEGRAM_BOT_TOKEN` **or** `BOT_TOKEN`. If both are set,
+`TELEGRAM_BOT_TOKEN` wins. Neither is required for long polling to start if the
+other is present.
 
 Validation rules (`src/config/env.ts`):
 
-- `TELEGRAM_BOT_TOKEN` must be non-empty and match `^\d+:[A-Za-z0-9_-]+$`.
+- The Telegram token must be non-empty and match `^\d+:[A-Za-z0-9_-]+$`.
 - `TELEGRAM_ALLOWED_USER_ID` must be a positive integer (stored as a number).
+- `TELEGRAM_WEBHOOK_SECRET` must match `^[A-Za-z0-9_-]{1,256}$`.
+- `TELEGRAM_WEBHOOK_URL` must be a valid URL.
 
 If configuration is invalid the bot prints a value-free error (it never echoes
 the received token) and exits with a non-zero code.
@@ -252,18 +261,21 @@ the error is recorded as `"<source>: <message>"`, and a warning is logged. The
 Commands defined in `package.json`:
 
 ```powershell
-npm run dev         # tsx watch src/index.ts  (development server)
-npm start           # tsx src/index.ts        (run once)
-npm run build       # tsc -p tsconfig.build.json  (emit to dist/)
-npm run typecheck   # tsc --noEmit            (type-check only)
-npm test            # vitest run              (run the test suite once)
-npm run test:watch  # vitest                  (watch mode)
+npm run dev            # tsx watch src/index.ts  (development server, long polling)
+npm start              # tsx src/index.ts        (run once, long polling)
+npm run build          # tsc -p tsconfig.build.json  (emit to dist/)
+npm run typecheck      # tsc --noEmit            (type-check only)
+npm test               # vitest run              (run the test suite once)
+npm run test:watch     # vitest                  (watch mode)
+npm run set-webhook    # tsx src/scripts/setWebhook.ts          (register webhook)
+npm run delete-webhook # tsx src/scripts/setWebhook.ts delete   (back to polling)
 ```
 
 Tests live under `tests/` and run in the Node environment (see
-`vitest.config.ts`). At the time of writing the suite has **10 test files and 73
-passing tests** covering the command router, handlers, configuration, the search
-pipeline, sponsorship classification, and the Remotive source.
+`vitest.config.ts`). At the time of writing the suite has **12 test files and 89
+passing tests** covering the command router, handlers, configuration (including
+webhook settings), the webhook handler itself, the search pipeline, sponsorship
+classification, and the Remotive source.
 
 ---
 
@@ -284,16 +296,72 @@ pipeline, sponsorship classification, and the Remotive source.
 
 ## Deployment
 
-`npm run dev` and `npm start` are intended for **local development and personal
-use**. There is currently no production deployment configuration:
+The bot supports two mutually exclusive run modes. **Never run them at the same
+time** — Telegram delivers each update once, and grammY itself refuses to start
+long polling on a bot instance that already serves a webhook.
 
-- `npm start` runs the TypeScript directly with `tsx`. Although `npm run build`
-  emits JavaScript to `dist/`, there is no npm script that runs the compiled
-  output.
-- An always-on bot needs a suitable host (for example a small VPS or container
-  running `npm start` under a process manager) or an adapted serverless/webhook
-  architecture, which is not implemented here.
-- The bot is **not** deployed by this repository.
+| Mode            | Entry point                        | Use case                          |
+| --------------- | ---------------------------------- | --------------------------------- |
+| Long polling    | `src/index.ts` (`npm run dev`)     | Local development and personal use. |
+| Webhooks        | `api/webhook.ts` (Vercel function) | Production on Vercel.             |
+
+### Running locally with long polling
+
+`npm run dev` (or `npm start`) runs `tsx src/index.ts` and calls `bot.start()`,
+which polls Telegram. No `TELEGRAM_WEBHOOK_SECRET` is needed. If you have already
+registered a webhook, remove it first with `npm run delete-webhook`.
+
+### Deploying to Vercel with webhooks
+
+Vercel runs the bot as a single serverless function instead of an always-on
+process:
+
+- `api/webhook.ts` is the function entry point (`@vercel/node` runtime). It
+  loads and validates the environment, builds the bot once per warm instance,
+  and exports grammY's HTTPS webhook handler as the default export.
+- `vercel.json` builds only `api/webhook.ts` and routes **every** path to it, so
+  no static output directory is required (this is what removes the
+  `No Output Directory named "public"` build error).
+- `src/bot/webhook.ts` wraps `webhookCallback(bot, "https", { secretToken })`.
+  grammY compares the incoming `X-Telegram-Bot-Api-Secret-Token` header against
+  `TELEGRAM_WEBHOOK_SECRET` in constant time and answers mismatches with HTTP
+  **401**. The secret is mandatory, so the endpoint cannot be driven by anyone
+  who does not know it.
+
+**Steps:**
+
+1. Push the repository to GitHub and import it at
+   [vercel.com/new](https://vercel.com/new). The framework preset can stay
+   "Other"; `vercel.json` supplies the build and routing.
+2. In **Project → Settings → Environment Variables**, add:
+   - `BOT_TOKEN` — your bot token (or `TELEGRAM_BOT_TOKEN`).
+   - `TELEGRAM_ALLOWED_USER_ID` — your numeric Telegram user ID.
+   - `TELEGRAM_WEBHOOK_SECRET` — a random 1–256 char secret (letters, digits,
+     `_`, `-`). Generate one with the PowerShell snippet below.
+   - `TELEGRAM_WEBHOOK_URL` — your deployment URL, e.g.
+     `https://<project>.vercel.app`. Optional: the setup script falls back to
+     Vercel's own `VERCEL_URL`.
+3. Deploy. The function is then live at
+   `https://<project>.vercel.app/api/webhook`.
+4. Register the webhook with Telegram (run locally against the same variables):
+
+   ```powershell
+   npm run set-webhook
+   ```
+
+   This calls `setWebhook` with the secret token and `allowed_updates`, then
+   prints `getWebhookInfo` so you can confirm the URL and pending updates.
+5. To go back to local polling, run `npm run delete-webhook` and start
+   `npm run dev`.
+
+Generate a secret:
+
+```powershell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 40 | ForEach-Object { [char]$_ })
+```
+
+> The webhook URL must be **HTTPS**; Telegram only calls secure endpoints.
+> Telegram retries failed deliveries, so a cold-starting Vercel function is fine.
 
 ---
 
@@ -308,6 +376,10 @@ use**. There is currently no production deployment configuration:
 | `/search` says "Could not reach any job sources" | A network problem or a source outage. Check connectivity and try again later. |
 | `/search` returns zero confirmed results | Working as designed: listings were found but none contained explicit sponsorship evidence. They are excluded as `unclear` or `not_offered`. |
 | `/search 20` seems capped | The handler caps results at 10 (`MAX_RESULTS`). |
+| Vercel build fails with `No Output Directory named "public"` | `vercel.json` is missing, not committed, or ignored. It must configure the `api/webhook.ts` build and the catch-all route. |
+| Webhook endpoint always answers `401` | The `X-Telegram-Bot-Api-Secret-Token` header does not match `TELEGRAM_WEBHOOK_SECRET`. Re-run `npm run set-webhook` after changing the secret. |
+| Messages silently do nothing on Vercel | The webhook is not registered, or points at the wrong URL. Run `getWebhookInfo` (via `npm run set-webhook`) and check `last_error_message`. |
+| Telegram reports `Conflict: terminated by other getUpdates` | Long polling and the webhook are running at the same time. Run `npm run delete-webhook` before `npm run dev`. |
 
 ---
 

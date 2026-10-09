@@ -4,8 +4,9 @@ import { createBot } from "./bot/createBot.js";
 import { createLogger, redactSecrets } from "./utils/logger.js";
 
 function reportFatal(error: unknown): void {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const secrets = token ? [token] : [];
+  const secrets = [process.env.TELEGRAM_BOT_TOKEN, process.env.BOT_TOKEN].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(
     "Fatal error while starting the bot:",
