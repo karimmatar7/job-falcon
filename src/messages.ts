@@ -1,0 +1,50 @@
+export const BOT_NAME = "Job Scout";
+export const PHASE = 2;
+
+export const UNAUTHORIZED_MESSAGE =
+  "This is a private bot. You are not authorised to use it.";
+
+export const START_MESSAGE = [
+  `Hello! I am ${BOT_NAME}, your private UK job-hunting assistant.`,
+  "",
+  "I search for real UK job vacancies with confirmed sponsorship for your profile.",
+  "",
+  "Type /help to see what I can do.",
+].join("\n");
+
+export const HELP_MESSAGE = [
+  `${BOT_NAME} - available commands`,
+  "",
+  "/start  - show a short introduction",
+  "/help   - show this command list",
+  "/status - show the bot status",
+  "/search [n] - search for confirmed sponsorship vacancies (max 10)",
+  "",
+  "Only the authorised Telegram user can use these commands.",
+].join("\n");
+
+export const SEARCH_PLACEHOLDER_MESSAGE = "Job search is available in Phase 2.";
+
+export function buildUnknownCommandMessage(commandName: string): string {
+  return [
+    `I do not recognise the command "/${commandName}".`,
+    "",
+    "Type /help to see the available commands.",
+  ].join("\n");
+}
+
+export function buildStatusMessage(params: {
+  readonly allowedUserId: number;
+  readonly phase: number;
+}): string {
+  return [
+    `${BOT_NAME} status`,
+    "",
+    "State: online",
+    `Phase: ${params.phase}`,
+    `Authorised Telegram user ID: ${params.allowedUserId}`,
+    "",
+    "Enabled: /start, /help, /status, /search",
+    "Features: real job search, sponsorship verification, deduplication, relevance scoring",
+  ].join("\n");
+}
