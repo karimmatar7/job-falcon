@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
+import * as http from "node:http";
 import { Bot } from "grammy";
 import { createWebhookHandler } from "../../src/bot/webhook.js";
 import type { AppConfig } from "../../src/config/env.js";
@@ -123,5 +124,51 @@ describe("createWebhookHandler", () => {
 
     expect(res.statusCode).toBeUndefined();
     expect(res.ended).toBe(true);
+  });
+
+  it("serves updates over a real HTTP route (POST /api/webhook)", async () => {
+    const config = makeConfig();
+    const bot = new Bot(config.telegramBotToken, { botInfo: BOT_INFO });
+    const handler = createWebhookHandler(config, silentLogger, bot);
+
+    const server = http.createServer((req, res) => {
+      void handler(req, res);
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      server.close();
+      throw new Error("Expected a TCP port from the test server.");
+    }
+    const baseUrl = `http://127.0.0.1:${address.port}/api/webhook`;
+
+    try {
+      const missingSecret = await fetch(baseUrl, { method: "POST", body: "{}" });
+      expect(missingSecret.status).toBe(401);
+
+      const update = {
+        update_id: 99,
+        message: {
+          message_id: 9,
+          date: 1_700_000_000,
+          chat: { id: config.allowedUserId, type: "private" },
+          from: { id: config.allowedUserId, is_bot: false, first_name: "Owner" },
+          text: "hello",
+        },
+      };
+      const withSecret = await fetch(baseUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-telegram-bot-api-secret-token": config.webhookSecret,
+        },
+        body: JSON.stringify(update),
+      });
+      expect(withSecret.status).toBe(200);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

@@ -316,12 +316,16 @@ registered a webhook, remove it first with `npm run delete-webhook`.
 Vercel runs the bot as a single serverless function instead of an always-on
 process:
 
-- `api/webhook.ts` is the function entry point (`@vercel/node` runtime). It
-  loads and validates the environment, builds the bot once per warm instance,
-  and exports grammY's HTTPS webhook handler as the default export.
-- `vercel.json` builds only `api/webhook.ts` and routes **every** path to it, so
-  no static output directory is required (this is what removes the
-  `No Output Directory named "public"` build error).
+- `api/webhook.ts` is a Vercel Function: any file under `api/` is deployed as a
+  function and served at the path **without** its extension —
+  `https://<project>.vercel.app/api/webhook`. It loads and validates the
+  environment, builds the bot once per warm instance, and exports grammY's
+  HTTPS webhook handler as the default export.
+- `vercel.json` only sets `"outputDirectory": "dist"` (the compiled output of
+  `npm run build`), so Vercel has a valid output directory and the
+  `No Output Directory named "public"` error cannot occur. There are **no
+  legacy `builds`/`routes`**, so nothing rewrites or bypasses the
+  `/api/webhook` function.
 - `src/bot/webhook.ts` wraps `webhookCallback(bot, "https", { secretToken })`.
   grammY compares the incoming `X-Telegram-Bot-Api-Secret-Token` header against
   `TELEGRAM_WEBHOOK_SECRET` in constant time and answers mismatches with HTTP
@@ -360,6 +364,18 @@ Generate a secret:
 -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 40 | ForEach-Object { [char]$_ })
 ```
 
+**Verifying the deployed route before testing in Telegram:**
+
+```powershell
+curl.exe -X POST "https://<project>.vercel.app/api/webhook" -H "content-type: application/json" -d "{\"update_id\":0}"
+```
+
+A `401 Unauthorized` (anything except `404 Not Found`) means the function is
+live at the registered URL and is only rejecting requests that lack the correct
+`X-Telegram-Bot-Api-Secret-Token` header. Then confirm Telegram sees no errors
+by running `npm run set-webhook`, which re-registers the webhook (idempotent)
+and prints `getWebhookInfo`; `last_error_message` should be empty or absent.
+
 > The webhook URL must be **HTTPS**; Telegram only calls secure endpoints.
 > Telegram retries failed deliveries, so a cold-starting Vercel function is fine.
 
@@ -376,7 +392,7 @@ Generate a secret:
 | `/search` says "Could not reach any job sources" | A network problem or a source outage. Check connectivity and try again later. |
 | `/search` returns zero confirmed results | Working as designed: listings were found but none contained explicit sponsorship evidence. They are excluded as `unclear` or `not_offered`. |
 | `/search 20` seems capped | The handler caps results at 10 (`MAX_RESULTS`). |
-| Vercel build fails with `No Output Directory named "public"` | `vercel.json` is missing, not committed, or ignored. It must configure the `api/webhook.ts` build and the catch-all route. |
+| Vercel build fails with `No Output Directory named "public"` | `vercel.json` must exist with `"outputDirectory": "dist"` and `npm run build` must emit `dist/` (run it locally first). |
 | Webhook endpoint always answers `401` | The `X-Telegram-Bot-Api-Secret-Token` header does not match `TELEGRAM_WEBHOOK_SECRET`. Re-run `npm run set-webhook` after changing the secret. |
 | Messages silently do nothing on Vercel | The webhook is not registered, or points at the wrong URL. Run `getWebhookInfo` (via `npm run set-webhook`) and check `last_error_message`. |
 | Telegram reports `Conflict: terminated by other getUpdates` | Long polling and the webhook are running at the same time. Run `npm run delete-webhook` before `npm run dev`. |
