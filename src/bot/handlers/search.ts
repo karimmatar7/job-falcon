@@ -11,14 +11,38 @@ function escapeMd(text: string): string {
   return text.replace(/[_*[\]()~>#+\-=|{}.!`\\]/g, '\\$&');
 }
 
-function formatVacancy(v: Vacancy): string {
+type ResultGroup = "confirmed" | "alternative" | "not_offered";
+
+function sponsorshipLabel(v: Vacancy, group: ResultGroup): string {
+  if (group === "confirmed") {
+    return "Sponsorship: Confirmed";
+  }
+  if (group === "alternative") {
+    return "Sponsorship: UNCONFIRMED \\- ask the employer";
+  }
+  return "Sponsorship: SPONSORSHIP NOT OFFERED";
+}
+
+function formatVacancy(v: Vacancy, group: ResultGroup): string {
   const parts: string[] = [];
   parts.push(`*${escapeMd(v.title)}*`);
   parts.push(escapeMd(`Employer: ${v.employer}`));
   parts.push(escapeMd(`Location: ${v.location}`));
   if (v.salary) parts.push(escapeMd(`Salary: ${v.salary}`));
-  parts.push(escapeMd(`Sponsorship: ${v.vacancySponsorshipStatus}`));
-  if (v.sponsorshipEvidence) parts.push(escapeMd(`Evidence: ${v.sponsorshipEvidence}`));
+  parts.push(sponsorshipLabel(v, group));
+
+  if (group === "confirmed" && v.sponsorshipEvidence) {
+    parts.push(escapeMd(`Evidence: ${v.sponsorshipEvidence}`));
+  } else if (group === "alternative") {
+    const note =
+      v.employerSponsorLicence === "yes"
+        ? "Note: the employer mentions a sponsor licence, but this listing does not confirm sponsorship for this specific role."
+        : "Note: this listing contains no sponsorship evidence. Ask the employer whether they can sponsor this role.";
+    parts.push(escapeMd(note));
+  } else if (v.sponsorshipEvidence) {
+    parts.push(escapeMd(`Evidence: ${v.sponsorshipEvidence}`));
+  }
+
   if (v.matchExplanation) parts.push(escapeMd(`Match: ${v.matchExplanation}`));
   if (v.applicationUrl) parts.push(escapeMd(`Apply: ${v.applicationUrl}`));
   if (v.source) parts.push(escapeMd(`Source: ${v.source}`));
@@ -34,32 +58,26 @@ function exclusionSummary(result: JobSearchResult): string {
   );
 }
 
+function sectionHeading(text: string): string {
+  return `*${escapeMd(text)}*`;
+}
+
 /**
  * Build the MarkdownV2-safe reply for a search result, distinguishing:
- * confirmed vacancies, listings found but none confirmed, no listings found,
- * and sources unavailable.
+ * confirmed vacancies, relevant alternatives with unconfirmed sponsorship,
+ * no listings found, and sources unavailable. Relevance scoring and
+ * sponsorship verification are kept separate: alternatives are never counted
+ * as confirmed.
  */
 export function buildSearchReply(result: JobSearchResult): string {
   const { vacancies, stats, errors } = result;
+  const confirmed = vacancies.filter(v => v.vacancySponsorshipStatus === "confirmed");
+  const alternatives = vacancies.filter(v => v.vacancySponsorshipStatus === "unclear");
+
   const sourceNote =
     errors.length > 0
       ? `\n\n${escapeMd(`Note: ${errors.length} source(s) were unavailable, so results may be incomplete.`)}`
       : '';
-
-  if (vacancies.length > 0) {
-    let body = escapeMd(`Found ${vacancies.length} confirmed sponsorship vacancy(ies). `);
-    body += exclusionSummary(result);
-    body += '\n\n';
-    body += vacancies.map(formatVacancy).join('\n\n');
-
-    if (body.length > MAX_MESSAGE_LENGTH) {
-      body = body.slice(0, MAX_MESSAGE_LENGTH - 200);
-      if (body.endsWith('\\')) body = body.slice(0, -1);
-      body += escapeMd('\n\n... (truncated due to length)');
-    }
-
-    return body + sourceNote;
-  }
 
   if (stats.fetched === 0 && errors.length > 0) {
     return escapeMd('Could not reach any job sources. Please try again later.');
@@ -69,10 +87,41 @@ export function buildSearchReply(result: JobSearchResult): string {
     return escapeMd('No job listings were found by the configured sources.');
   }
 
-  let message = escapeMd(
-    `Found ${stats.fetched} listing(s), but none had explicit sponsorship evidence so nothing was returned.`,
-  );
+  let message: string;
+  if (confirmed.length > 0) {
+    const altClause =
+      alternatives.length > 0
+        ? ` and ${alternatives.length} other relevant opportunity(ies) with unconfirmed sponsorship follow.`
+        : '.';
+    message = escapeMd(`Found ${confirmed.length} confirmed sponsorship vacancy(ies)${altClause}`);
+  } else if (alternatives.length > 0) {
+    message = escapeMd(
+      `No vacancies with confirmed sponsorship were found. Showing up to 2 other relevant opportunities where sponsorship is unconfirmed \\- ask the employer about sponsorship.`,
+    );
+  } else {
+    message = escapeMd(
+      `Found ${stats.fetched} listing(s), but none were usable confirmed or relevant alternative results.`,
+    );
+  }
+
   message += `\n${exclusionSummary(result)}`;
+
+  if (confirmed.length > 0) {
+    message += `\n\n${sectionHeading('CONFIRMED SPONSORSHIP')}\n`;
+    message += confirmed.map(v => formatVacancy(v, "confirmed")).join('\n\n');
+  }
+
+  if (alternatives.length > 0) {
+    message += `\n\n${sectionHeading('OTHER RELEVANT OPPORTUNITIES (sponsorship unconfirmed)')}\n`;
+    message += alternatives.map(v => formatVacancy(v, "alternative")).join('\n\n');
+  }
+
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    message = message.slice(0, MAX_MESSAGE_LENGTH - 200);
+    if (message.endsWith('\\')) message = message.slice(0, -1);
+    message += escapeMd('\n\n... (truncated due to length)');
+  }
+
   return message + sourceNote;
 }
 

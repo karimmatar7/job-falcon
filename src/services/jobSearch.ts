@@ -13,7 +13,6 @@ export interface JobSearchQuery {
   readonly keywords?: string[];
   readonly location?: string;
   readonly limit?: number;
-  readonly includeUnclear?: boolean;
 }
 
 export interface JobSearchStats {
@@ -21,12 +20,21 @@ export interface JobSearchStats {
   parsed: number;
   excludedInvalid: number;
   excludedClosed: number;
-  excludedUnclear: number;
   excludedNotOffered: number;
   excludedDuplicates: number;
   excludedTpp: number;
+  /** Relevant, open vacancies left over after the alternative cap; not shown. */
+  excludedUnclear: number;
+  /** Vacancies returned with explicit role-level sponsorship evidence. */
+  confirmed: number;
+  /** Additional relevant vacancies shown as "other opportunities" (sponsorship unconfirmed). */
+  alternatives: number;
+  /** Total vacancies returned (confirmed + alternatives). */
   returned: number;
 }
+
+/** Hard cap on the number of unconfirmed alternatives appended to a result set. */
+export const MAX_ALTERNATIVES = 2;
 
 export interface JobSearchResult {
   readonly vacancies: Vacancy[];
@@ -61,7 +69,6 @@ export class RealJobSearchService {
   async search(query: JobSearchQuery = {}): Promise<JobSearchResult> {
     const keywords = query.keywords && query.keywords.length > 0 ? query.keywords : DEFAULT_KEYWORDS;
     const limit = Math.min(query.limit ?? 5, 20);
-    const includeUnclear = query.includeUnclear ?? false;
 
     const fetched: Vacancy[] = [];
     const parsed: Vacancy[] = [];
@@ -114,52 +121,60 @@ export class RealJobSearchService {
       parsed: parsed.length,
       excludedInvalid,
       excludedClosed: 0,
-      excludedUnclear: 0,
       excludedNotOffered: 0,
       excludedDuplicates: 0,
       excludedTpp: 0,
+      excludedUnclear: 0,
+      confirmed: 0,
+      alternatives: 0,
       returned: 0,
     };
 
-    let filtered = parsed.filter(v => {
-      if (v.vacancySponsorshipStatus === 'confirmed') return true;
-      if (v.vacancySponsorshipStatus === 'unclear') {
-        stats.excludedUnclear++;
-        return includeUnclear;
-      }
-      if (v.vacancySponsorshipStatus === 'not_offered') {
+    // Sponsorship classification and relevance scoring stay independent: a
+    // vacancy's status is decided by `classifySponsorship` in the source
+    // adapter, never by its relevance score.
+    const confirmedCandidates: Vacancy[] = [];
+    const unclearCandidates: Vacancy[] = [];
+
+    for (const vacancy of parsed) {
+      if (vacancy.vacancySponsorshipStatus === 'not_offered') {
         stats.excludedNotOffered++;
-        return false;
+        continue;
       }
-      stats.excludedUnclear++;
-      return includeUnclear;
-    });
-
-    filtered = filtered.filter(v => {
-      if (isTppExcluded(v)) {
+      if (isTppExcluded(vacancy)) {
         stats.excludedTpp++;
-        return false;
+        continue;
       }
-      return true;
-    });
+      if (vacancy.vacancySponsorshipStatus === 'confirmed') {
+        confirmedCandidates.push(vacancy);
+      } else {
+        unclearCandidates.push(vacancy);
+      }
+    }
 
-    const dupResult = findDuplicates(filtered);
+    // De-duplicate across both groups, confirmed first, so a confirmed listing
+    // always wins over an unclear duplicate of the same vacancy.
+    const dupResult = findDuplicates([...confirmedCandidates, ...unclearCandidates]);
     stats.excludedDuplicates = dupResult.duplicates.length;
-    filtered = dupResult.kept;
+    const deduped = dupResult.kept;
 
-    const scored = filtered
-      .map(v => {
-        const score = computeMatchScore(v, PROFILE);
-        return {
-          ...v,
-          matchScore: score,
-          matchExplanation: explainMatch(v, score, PROFILE),
-        };
-      })
-      .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+    const scoredConfirmed = scoreAndRank(
+      deduped.filter(v => v.vacancySponsorshipStatus === 'confirmed'),
+    );
+    const scoredUnclear = scoreAndRank(
+      deduped.filter(v => v.vacancySponsorshipStatus === 'unclear'),
+    );
 
-    const vacancies = scored.slice(0, limit);
-    stats.returned = vacancies.length;
+    const confirmed = scoredConfirmed.slice(0, limit);
+    const alternativeSlots = Math.max(0, Math.min(MAX_ALTERNATIVES, limit - confirmed.length));
+    const alternatives = scoredUnclear.slice(0, alternativeSlots);
+
+    stats.confirmed = confirmed.length;
+    stats.alternatives = alternatives.length;
+    stats.excludedUnclear = scoredUnclear.length - alternatives.length;
+    stats.returned = confirmed.length + alternatives.length;
+
+    const vacancies = [...confirmed, ...alternatives];
 
     this.logger.info('Job search pipeline summary', {
       sourcesAttempted,
@@ -169,10 +184,11 @@ export class RealJobSearchService {
       excludedInvalid: stats.excludedInvalid,
       rejectedClosed: stats.excludedClosed,
       rejectedDuplicates: stats.excludedDuplicates,
-      rejectedSponsorship: stats.excludedUnclear + stats.excludedNotOffered,
-      excludedUnclear: stats.excludedUnclear,
-      excludedNotOffered: stats.excludedNotOffered,
+      rejectedNotOffered: stats.excludedNotOffered,
       excludedTpp: stats.excludedTpp,
+      confirmed: stats.confirmed,
+      alternatives: stats.alternatives,
+      excludedUnclear: stats.excludedUnclear,
       returned: stats.returned,
     });
 
@@ -182,4 +198,17 @@ export class RealJobSearchService {
       errors,
     };
   }
+}
+
+function scoreAndRank(vacancies: readonly Vacancy[]): Vacancy[] {
+  return vacancies
+    .map(v => {
+      const score = computeMatchScore(v, PROFILE);
+      return {
+        ...v,
+        matchScore: score,
+        matchExplanation: explainMatch(v, score, PROFILE),
+      };
+    })
+    .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
 }

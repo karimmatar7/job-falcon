@@ -25,10 +25,12 @@ function makeStats(overrides: Partial<JobSearchStats> = {}): JobSearchStats {
     parsed: 0,
     excludedInvalid: 0,
     excludedClosed: 0,
-    excludedUnclear: 0,
     excludedNotOffered: 0,
     excludedDuplicates: 0,
     excludedTpp: 0,
+    excludedUnclear: 0,
+    confirmed: 0,
+    alternatives: 0,
     returned: 0,
     ...overrides,
   };
@@ -48,6 +50,22 @@ function makeVacancy(): Vacancy {
     employerSponsorLicence: "yes",
     employerLicenceEvidence: "Employer mentions licence: sponsor licence",
     lastVerifiedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function makeAlternative(overrides: Partial<Vacancy> = {}): Vacancy {
+  return {
+    ...makeVacancy(),
+    id: "alt-1",
+    title: "Frontend Developer",
+    employer: "Beta Ltd",
+    location: "UK",
+    applicationUrl: "https://example.com/apply/alt-1",
+    sourceUrl: "https://example.com/jobs/alt-1",
+    vacancySponsorshipStatus: "unclear",
+    sponsorshipEvidence: "No explicit sponsorship support found; silence about sponsorship.",
+    employerSponsorLicence: "unknown",
+    ...overrides,
   };
 }
 
@@ -103,24 +121,68 @@ describe("buildSearchReply", () => {
   it("reports confirmed vacancies", () => {
     const result = makeResult({
       vacancies: [makeVacancy()],
-      stats: makeStats({ fetched: 1, parsed: 1, returned: 1 }),
+      stats: makeStats({ fetched: 1, parsed: 1, confirmed: 1, returned: 1 }),
     });
 
     const reply = buildSearchReply(result);
 
     expect(reply).toContain("confirmed sponsorship vacancy");
     expect(reply).toContain("Acme Ltd");
+    expect(reply).toContain("CONFIRMED SPONSORSHIP");
   });
 
-  it("distinguishes listings found without explicit sponsorship", () => {
+  it("shows relevant alternatives with unconfirmed sponsorship when no confirmed exist", () => {
     const result = makeResult({
-      stats: makeStats({ fetched: 3, parsed: 3, excludedUnclear: 3 }),
+      vacancies: [makeAlternative(), makeAlternative({ id: "alt-2", applicationUrl: "https://example.com/apply/alt-2" })],
+      stats: makeStats({ fetched: 3, parsed: 3, excludedUnclear: 1, alternatives: 2, returned: 2 }),
     });
 
     const reply = buildSearchReply(result);
 
-    expect(reply).toContain("none had explicit sponsorship evidence");
-    expect(reply).toContain("unclear\\=3");
+    expect(reply).toContain("No vacancies with confirmed sponsorship were found");
+    expect(reply).toContain("ask the employer");
+    expect(reply).toContain("UNCONFIRMED");
+    expect(reply).toContain("OTHER RELEVANT OPPORTUNITIES");
+    expect(reply).toContain("Beta Ltd");
+    expect(reply).toContain("excluded unclear\\=1");
+  });
+
+  it("shows confirmed results first and then alternatives", () => {
+    const result = makeResult({
+      vacancies: [makeVacancy(), makeAlternative()],
+      stats: makeStats({ fetched: 2, parsed: 2, confirmed: 1, alternatives: 1, returned: 2 }),
+    });
+
+    const reply = buildSearchReply(result);
+
+    const confirmedAt = reply.indexOf("CONFIRMED SPONSORSHIP");
+    const alternativesAt = reply.indexOf("OTHER RELEVANT OPPORTUNITIES");
+    expect(confirmedAt).toBeGreaterThan(-1);
+    expect(alternativesAt).toBeGreaterThan(confirmedAt);
+    expect(reply).toContain("Acme Ltd");
+    expect(reply).toContain("Beta Ltd");
+  });
+
+  it("never labels an alternative as confirmed sponsorship", () => {
+    const result = makeResult({
+      vacancies: [makeAlternative()],
+      stats: makeStats({ fetched: 1, parsed: 1, alternatives: 1, returned: 1 }),
+    });
+
+    const reply = buildSearchReply(result);
+
+    expect(reply).not.toContain("confirmed sponsorship vacancy");
+    expect(reply).toContain("UNCONFIRMED");
+  });
+
+  it("distinguishes no usable listings when the sources found only excluded records", () => {
+    const result = makeResult({
+      stats: makeStats({ fetched: 2, parsed: 2, excludedNotOffered: 2 }),
+    });
+
+    const reply = buildSearchReply(result);
+
+    expect(reply).toContain("none were usable");
   });
 
   it("distinguishes no listings found by the sources", () => {

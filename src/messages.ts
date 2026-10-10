@@ -7,7 +7,8 @@ export const UNAUTHORIZED_MESSAGE =
 export const START_MESSAGE = [
   `Hello! I am ${BOT_NAME}, your private UK job-hunting assistant.`,
   "",
-  "I search for real UK job vacancies with confirmed sponsorship for your profile.",
+  "I search for real UK job vacancies, showing confirmed sponsorship results first.",
+  "When no role has confirmed sponsorship, I still show relevant alternatives and flag them as UNCONFIRMED so you can ask the employer.",
   "",
   "Type /help to see what I can do.",
 ].join("\n");
@@ -18,7 +19,7 @@ export const HELP_MESSAGE = [
   "/start  - show a short introduction",
   "/help   - show this command list",
   "/status - show the bot status",
-  "/search [n] - search for confirmed sponsorship vacancies (max 10)",
+  "/search [n] - search for confirmed sponsorship plus up to 2 relevant unconfirmed alternatives (max 10)",
   "",
   "Only the authorised Telegram user can use these commands.",
 ].join("\n");
@@ -45,6 +46,6 @@ export function buildStatusMessage(params: {
     `Authorised Telegram user ID: ${params.allowedUserId}`,
     "",
     "Enabled: /start, /help, /status, /search",
-    "Features: real job search, sponsorship verification, deduplication, relevance scoring",
+    "Features: real job search, sponsorship verification, confirmed + unconfirmed alternative results, deduplication, relevance scoring",
   ].join("\n");
 }

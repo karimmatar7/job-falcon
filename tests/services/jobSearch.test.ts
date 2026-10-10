@@ -22,6 +22,22 @@ function makeVacancy(overrides: Partial<Vacancy> = {}): Vacancy {
   };
 }
 
+let counter = 0;
+function unclearVacancy(overrides: Partial<Vacancy> = {}): Vacancy {
+  counter += 1;
+  return makeVacancy({
+    id: `unclear-${counter}`,
+    title: `Unclear Developer ${counter}`,
+    employer: `Unclear Co ${counter}`,
+    applicationUrl: `https://example.com/apply/unclear-${counter}`,
+    sourceUrl: `https://example.com/jobs/unclear-${counter}`,
+    vacancySponsorshipStatus: "unclear",
+    sponsorshipEvidence: "No explicit sponsorship support found; silence about sponsorship.",
+    employerSponsorLicence: "unknown",
+    ...overrides,
+  });
+}
+
 function sourceReturning(listings: readonly Vacancy[], name = "fake"): JobSource {
   return { name, enabled: true, search: async () => [...listings] };
 }
@@ -43,20 +59,89 @@ const silentLogger: Logger = {
 };
 
 describe("RealJobSearchService", () => {
-  it("returns confirmed sponsorship vacancies only", async () => {
+  it("returns confirmed vacancies first, then up to two relevant alternatives", async () => {
     const service = new RealJobSearchService(
-      [sourceReturning([makeVacancy()])],
+      [
+        sourceReturning([
+          makeVacancy({ id: "c1" }),
+          unclearVacancy(),
+          unclearVacancy(),
+          unclearVacancy(),
+        ]),
+      ],
       silentLogger,
     );
 
     const result = await service.search();
 
+    expect(result.vacancies).toHaveLength(3);
+    expect(result.vacancies[0]?.vacancySponsorshipStatus).toBe("confirmed");
+    expect(result.vacancies.slice(1).every(v => v.vacancySponsorshipStatus === "unclear")).toBe(
+      true,
+    );
+    expect(result.stats.fetched).toBe(4);
+    expect(result.stats.parsed).toBe(4);
+    expect(result.stats.confirmed).toBe(1);
+    expect(result.stats.alternatives).toBe(2);
+    expect(result.stats.excludedUnclear).toBe(1);
+    expect(result.stats.returned).toBe(3);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("returns relevant alternatives when there are zero confirmed results", async () => {
+    const service = new RealJobSearchService(
+      [sourceReturning([unclearVacancy(), unclearVacancy(), unclearVacancy()])],
+      silentLogger,
+    );
+
+    const result = await service.search();
+
+    expect(result.vacancies).toHaveLength(2);
+    expect(result.vacancies.every(v => v.vacancySponsorshipStatus === "unclear")).toBe(true);
+    expect(result.stats.confirmed).toBe(0);
+    expect(result.stats.alternatives).toBe(2);
+    expect(result.stats.excludedUnclear).toBe(1);
+    expect(result.stats.returned).toBe(2);
+  });
+
+  it("never counts alternatives as confirmed sponsorship", async () => {
+    const service = new RealJobSearchService(
+      [sourceReturning([unclearVacancy(), unclearVacancy()])],
+      silentLogger,
+    );
+
+    const result = await service.search();
+
+    expect(result.stats.confirmed).toBe(0);
+    expect(result.stats.alternatives).toBe(2);
+    expect(result.vacancies.some(v => v.vacancySponsorshipStatus === "confirmed")).toBe(false);
+  });
+
+  it("caps total results at the requested limit", async () => {
+    const service = new RealJobSearchService(
+      [sourceReturning([makeVacancy({ id: "c1" }), unclearVacancy(), unclearVacancy()])],
+      silentLogger,
+    );
+
+    const result = await service.search({ limit: 1 });
+
     expect(result.vacancies).toHaveLength(1);
     expect(result.vacancies[0]?.vacancySponsorshipStatus).toBe("confirmed");
-    expect(result.stats.fetched).toBe(1);
-    expect(result.stats.parsed).toBe(1);
-    expect(result.stats.returned).toBe(1);
-    expect(result.errors).toEqual([]);
+    expect(result.stats.confirmed).toBe(1);
+    expect(result.stats.alternatives).toBe(0);
+  });
+
+  it("leaves room for alternatives when confirmed results do not fill the limit", async () => {
+    const service = new RealJobSearchService(
+      [sourceReturning([makeVacancy({ id: "c1" }), unclearVacancy()])],
+      silentLogger,
+    );
+
+    const result = await service.search({ limit: 2 });
+
+    expect(result.vacancies).toHaveLength(2);
+    expect(result.stats.confirmed).toBe(1);
+    expect(result.stats.alternatives).toBe(1);
   });
 
   it("reports no listings when sources yield nothing", async () => {
@@ -85,35 +170,6 @@ describe("RealJobSearchService", () => {
     expect(result.errors[0]).toContain("503 Service Unavailable");
   });
 
-  it("excludes unclear sponsorship by default", async () => {
-    const unclear = makeVacancy({
-      id: "job-unclear",
-      vacancySponsorshipStatus: "unclear",
-      sponsorshipEvidence: "No explicit sponsorship support found.",
-    });
-    const service = new RealJobSearchService([sourceReturning([unclear])], silentLogger);
-
-    const result = await service.search();
-
-    expect(result.vacancies).toEqual([]);
-    expect(result.stats.excludedUnclear).toBe(1);
-  });
-
-  it("includes unclear sponsorship when explicitly requested", async () => {
-    const unclear = makeVacancy({
-      id: "job-unclear",
-      vacancySponsorshipStatus: "unclear",
-      sponsorshipEvidence: "No explicit sponsorship support found.",
-    });
-    const service = new RealJobSearchService([sourceReturning([unclear])], silentLogger);
-
-    const result = await service.search({ includeUnclear: true });
-
-    expect(result.vacancies).toHaveLength(1);
-    expect(result.stats.excludedUnclear).toBe(1);
-    expect(result.stats.returned).toBe(1);
-  });
-
   it("excludes listings that explicitly do not offer sponsorship", async () => {
     const notOffered = makeVacancy({
       id: "job-no",
@@ -122,10 +178,12 @@ describe("RealJobSearchService", () => {
     });
     const service = new RealJobSearchService([sourceReturning([notOffered])], silentLogger);
 
-    const result = await service.search({ includeUnclear: true });
+    const result = await service.search();
 
     expect(result.vacancies).toEqual([]);
     expect(result.stats.excludedNotOffered).toBe(1);
+    expect(result.stats.confirmed).toBe(0);
+    expect(result.stats.alternatives).toBe(0);
   });
 
   it("deduplicates listings sharing an application URL", async () => {
@@ -137,6 +195,27 @@ describe("RealJobSearchService", () => {
 
     expect(result.vacancies).toHaveLength(1);
     expect(result.stats.excludedDuplicates).toBe(1);
+  });
+
+  it("prefers a confirmed listing over an unclear duplicate of the same vacancy", async () => {
+    const confirmed = makeVacancy({ id: "confirmed" });
+    const duplicateUnclear = unclearVacancy({
+      applicationUrl: "https://example.com/apply/1",
+      sourceUrl: "https://example.com/jobs/1",
+      employer: "Acme Ltd",
+      title: "Graduate Software Developer",
+    });
+    const service = new RealJobSearchService(
+      [sourceReturning([confirmed, duplicateUnclear])],
+      silentLogger,
+    );
+
+    const result = await service.search();
+
+    expect(result.vacancies).toHaveLength(1);
+    expect(result.vacancies[0]?.vacancySponsorshipStatus).toBe("confirmed");
+    expect(result.stats.excludedDuplicates).toBe(1);
+    expect(result.stats.alternatives).toBe(0);
   });
 
   it("excludes TPP graduate roles in Leeds", async () => {
@@ -187,18 +266,21 @@ describe("RealJobSearchService", () => {
       warn: (message, details) => records.push({ level: "warn", message, details }),
       error: (message, details) => records.push({ level: "error", message, details }),
     };
-    const service = new RealJobSearchService([sourceReturning([makeVacancy()])], capturingLogger);
+    const service = new RealJobSearchService(
+      [sourceReturning([makeVacancy({ id: "c1" }), unclearVacancy()])],
+      capturingLogger,
+    );
 
-    await service.search();
+    await service.search({ limit: 2 });
 
     const summary = records.find(record => record.message === "Job search pipeline summary");
     expect(summary).toBeDefined();
     expect(summary?.details).toMatchObject({
-      fetched: 1,
-      parsed: 1,
-      rejectedSponsorship: 0,
-      rejectedDuplicates: 0,
-      returned: 1,
+      fetched: 2,
+      parsed: 2,
+      confirmed: 1,
+      alternatives: 1,
+      returned: 2,
     });
   });
 });

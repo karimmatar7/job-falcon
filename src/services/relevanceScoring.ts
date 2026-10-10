@@ -65,7 +65,7 @@ export function computeMatchScore(
   }
 
   if (
-    /\b(developer|engineer|software|web|frontend|fullstack|digital)\b/i.test(
+    /\b(developer|engineer|software|web|frontend|fullstack|digital|quality|qa|tester|testing|test|automation)\b/i.test(
       title,
     )
   ) {
@@ -91,10 +91,9 @@ export function computeMatchScore(
   }
 
   if (
-    score < 20 &&
-    /\b(uk|united kingdom|england)\b/i.test(text)
+    /\b(uk|united kingdom|england|britain|british)\b/i.test(text)
   ) {
-    score += 5;
+    score += 10;
   }
 
   if (
@@ -126,7 +125,7 @@ export function explainMatch(
   }
 
   if (
-    /\b(developer|engineer|software|web|frontend|fullstack)\b/i.test(
+    /\b(developer|engineer|software|web|frontend|fullstack|quality|qa|tester|testing|test|automation)\b/i.test(
       title,
     )
   ) {

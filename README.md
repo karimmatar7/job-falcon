@@ -2,12 +2,15 @@
 
 **Job Scout** is a private Telegram bot that hunts for UK job vacancies that are
 suitable for candidates who require **visa sponsorship**. It searches live job
-sources, keeps only vacancies whose own text explicitly offers sponsorship, then
-de-duplicates, scores, and ranks them against a personal profile.
+sources, keeps only vacancies whose own text explicitly offers sponsorship as
+**confirmed**, then de-duplicates, scores, and ranks them against a personal
+profile. When no role has confirmed sponsorship, it still surfaces up to **two
+relevant, open vacancies with unconfirmed sponsorship**, clearly labelled so you
+can ask the employer before getting your hopes up.
 
 The design goal is simple and deliberately strict: **never report a vacancy as
-sponsored unless the vacancy itself says so.** Job Scout would rather return
-nothing than raise false hopes.
+sponsored unless the vacancy itself says so.** Job Scout would rather label
+uncertainty than raise false hopes.
 
 ---
 
@@ -18,14 +21,19 @@ whether a role offers a visa. Job Scout solves this by:
 
 1. Pulling vacancies from configured job sources.
 2. Verifying sponsorship from the vacancy's own wording.
-3. Filtering to **confirmed** sponsorship only (by default).
+3. Keeping **confirmed** sponsorship results and, if none exist (or room is
+   left), appending up to **2 relevant alternatives with unconfirmed
+   sponsorship**.
 4. De-duplicating and relevance-scoring the remaining roles.
-5. Replying through Telegram with the evidence behind every result.
+5. Replying through Telegram with the evidence behind every result, and a clear
+   "UNCONFIRMED — ask the employer" label on alternatives.
 
 A vacancy is only ever marked `confirmed` when its title, employer name, or
 description contains an explicit positive statement (for example
 "we will sponsor", "visa sponsorship available"). Silence is treated as
-`unclear`, never as support.
+`unclear`, never as support. Relevance scoring and sponsorship classification
+are kept completely separate: an unconfirmed job may be shown as an
+alternative, but it is never counted as a confirmed sponsorship result.
 
 ---
 
@@ -45,10 +53,19 @@ Only features that exist in the current codebase are listed here.
 - **Sponsorship verification:** classifies each vacancy as `confirmed`,
   `unclear`, or `not_offered`, and records the exact evidence sentence plus the
   source URL. Employer sponsor-licence status is tracked **separately**.
+- **Two result groups:** `/search` replies show a **CONFIRMED SPONSORSHIP**
+  section first, then an **OTHER RELEVANT OPPORTUNITIES** section (up to 2,
+  sponsorship unconfirmed). Alternatives are labelled
+  `UNCONFIRMED — ask the employer` and are never counted as confirmed. For
+  completeness the formatter also knows a `SPONSORSHIP NOT OFFERED` label for
+  explicit refusals, which are excluded from results.
 - **Deduplication:** removes listings that share an application URL, the same
   employer + title, or the same id; also applies a configured exclusion rule.
+  Confirmed listings win over unclear duplicates of the same vacancy.
 - **Relevance scoring:** scores each vacancy 0–100 against a personal profile
   (skills, preferred locations, seniority signals) and sorts highest-first.
+  Junior/graduate, software/web/frontend/full-stack and QA/testing roles are
+  prioritised, and UK signals are boosted over global/remote postings.
 - **Diagnostics:** structured logs for each source and a pipeline summary;
   secrets are redacted from all log output.
 - **Config validation:** environment variables are validated with Zod at
@@ -160,8 +177,8 @@ replies with your numeric Telegram user ID.
 | `/start`       | Short introduction.                                                    |
 | `/help`        | Lists the available commands.                                          |
 | `/status`      | Shows bot state, the current phase, and the authorised user ID.        |
-| `/search`      | Searches sources and returns up to the default number of results.      |
-| `/search [n]`  | Searches and returns up to `n` results (maximum 10).                   |
+| `/search`      | Searches sources and returns up to the default number of results. |
+| `/search [n]`  | Searches and returns up to `n` results (maximum 10).               |
 
 `/search [n]` details (`src/bot/handlers/search.ts`):
 
@@ -169,6 +186,7 @@ replies with your numeric Telegram user ID.
 - Invalid input replies with `Invalid number. Usage: /search [number]`.
 - The result count is capped at **10** (`MAX_RESULTS`).
 - Without an argument the handler requests **5** results.
+- The total returned (confirmed + alternatives) never exceeds `n`.
 - Replies are sent as MarkdownV2 and truncated if they would exceed 4,000
   characters.
 
@@ -199,16 +217,21 @@ title, employer name, and description in this order:
 
 How the three outcomes are handled:
 
-| Status        | Meaning                                             | Returned by `/search`? |
-| ------------- | --------------------------------------------------- | ---------------------- |
-| `confirmed`   | Explicit, quoted sponsorship evidence in the listing. | Yes                    |
-| `unclear`     | No explicit evidence either way.                    | No (excluded)          |
-| `not_offered` | Explicit statement that sponsorship is not offered. | No (excluded)          |
+| Status        | Meaning                                             | Returned by `/search`?                              |
+| ------------- | --------------------------------------------------- | --------------------------------------------------- |
+| `confirmed`   | Explicit, quoted sponsorship evidence in the listing. | Yes, in **CONFIRMED SPONSORSHIP**.                  |
+| `unclear`     | No explicit evidence either way.                    | Up to **2** in **OTHER RELEVANT OPPORTUNITIES**, labelled `UNCONFIRMED — ask the employer`. |
+| `not_offered` | Explicit statement that sponsorship is not offered. | No (excluded; counted in the exclusion summary).    |
 
 The stored `sponsorshipEvidence` quotes the **exact sentence** containing the
-match and the **source URL**, so a human can re-check it. The pipeline also
-exposes an `includeUnclear` option internally, but the Telegram command does
-**not** enable it — `/search` is confirmed-only.
+match and the **source URL**, so a human can re-check it. `not_offered`
+vacancies are never presented as sponsorship opportunities; if such a vacancy
+were surfaced in a message it would be labelled `SPONSORSHIP NOT OFFERED`.
+
+The pipeline keeps sponsorship classification and relevance scoring completely
+separate. A relevant `unclear` vacancy may be shown as an alternative, but it is
+never counted as `confirmed`, never labelled as sponsored, and never reported
+under the confirmed heading.
 
 ---
 
@@ -225,11 +248,20 @@ exposes an `includeUnclear` option internally, but the Telegram command does
   of 1 second** between calls.
 - **Limitations:**
   - The API is **global/remote**, not UK-specific, and region filtering is not
-    applied yet.
+    applied yet. UK-priority ranking does **not** filter out non-UK postings —
+    it only boosts UK signals, so most alternatives will be worldwide/remote
+    roles with no UK mention. Do not read this source as broad UK coverage.
   - It ignores the `keywords`, `location`, and `limit` query parameters, so it
     effectively returns the same set of listings each time.
   - Description content is what determines classification, so listings that do
-    not mention sponsorship stay `unclear`.
+    not mention sponsorship stay `unclear` and can only ever appear as
+    alternatives.
+- **Realistic improvements to consider:** add a UK-focused source such as the
+  [Adzuna UK API](https://developer.adzuna.com/) (free tier) or the Reed API,
+  both of which accept a UK country/location filter. Any new source must supply
+  a real per-vacancy application URL and its own description text so that
+  `classifySponsorship()` can judge it; a source that only lists jobs without
+  per-vacancy text would not add sponsorship signal.
 - **Page scraping:** none. The API already provides the full description, so
   **no employer pages are fetched**. Scraping them would be unreliable (their
   pages contain navigation/boilerplate mentioning "sponsorship") and could
@@ -252,7 +284,9 @@ the error is recorded as `"<source>: <message>"`, and a warning is logged. The
 
 > Verified during development against live Remotive data: 19 listings were
 > returned, all with usable descriptions, **0** were `confirmed`, and **2** were
-> explicit refusals (`not_offered`). This is expected behaviour, not a bug.
+> explicit refusals (`not_offered`). In that scan the bot now replies with the
+> top 2 relevant `unclear` vacancies labelled `UNCONFIRMED — ask the employer`
+> instead of returning nothing. This is expected behaviour, not a bug.
 
 ---
 
@@ -272,10 +306,11 @@ npm run delete-webhook # tsx src/scripts/setWebhook.ts delete   (back to polling
 ```
 
 Tests live under `tests/` and run in the Node environment (see
-`vitest.config.ts`). At the time of writing the suite has **12 test files and 89
+`vitest.config.ts`). At the time of writing the suite has **12 test files and 96
 passing tests** covering the command router, handlers, configuration (including
-webhook settings), the webhook handler itself, the search pipeline, sponsorship
-classification, and the Remotive source.
+webhook settings), the webhook handler itself, the search pipeline
+(confirmed + alternative grouping), sponsorship classification, and the Remotive
+source.
 
 ---
 
@@ -390,7 +425,7 @@ and prints `getWebhookInfo`; `last_error_message` should be empty or absent.
 | `TELEGRAM_BOT_TOKEN has an invalid format` | The token was copied incorrectly or `.env` is not loaded (run from the project root). |
 | `/search` says no listings were found | The source returned nothing, or returned only records that failed validation. Retry later. |
 | `/search` says "Could not reach any job sources" | A network problem or a source outage. Check connectivity and try again later. |
-| `/search` returns zero confirmed results | Working as designed: listings were found but none contained explicit sponsorship evidence. They are excluded as `unclear` or `not_offered`. |
+| `/search` returns zero confirmed results | Working as designed: no listing contained explicit sponsorship evidence. The bot still shows up to 2 relevant alternatives labelled `UNCONFIRMED — ask the employer`. If none appear either, every listing was excluded (for example explicit `not_offered` refusals or duplicates). |
 | `/search 20` seems capped | The handler caps results at 10 (`MAX_RESULTS`). |
 | Vercel build fails with `No Output Directory named "public"` | `vercel.json` must exist with `"outputDirectory": "dist"` and `npm run build` must emit `dist/` (run it locally first). |
 | Webhook endpoint always answers `401` | The `X-Telegram-Bot-Api-Secret-Token` header does not match `TELEGRAM_WEBHOOK_SECRET`. Re-run `npm run set-webhook` after changing the secret. |
@@ -409,7 +444,7 @@ Ideas that are **not yet implemented**:
 - Wiring the placeholder vacancy-verification service into the pipeline.
 - UK/region and remote-eligibility filtering.
 - A user-editable profile instead of the hard-coded personal profile.
-- Optional "show unclear results" mode surfaced through the bot.
+- A configurable number of unconfirmed alternatives (currently capped at 2).
 
 ---
 
