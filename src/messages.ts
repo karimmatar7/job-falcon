@@ -19,7 +19,10 @@ export const HELP_MESSAGE = [
   "/start  - show a short introduction",
   "/help   - show this command list",
   "/status - show the bot status",
-  "/search [n] - search for confirmed sponsorship plus up to 2 relevant unconfirmed alternatives (max 10)",
+  "/search - search for confirmed sponsorship plus up to 5 relevant unconfirmed alternatives",
+  "        /search [limit] [keywords] [location]",
+  "        e.g. /search 5 software developer leeds  (limit 1-10, default 5)",
+  "        e.g. /search javascript leeds",
   "",
   "Only the authorised Telegram user can use these commands.",
 ].join("\n");

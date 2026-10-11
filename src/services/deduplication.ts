@@ -23,6 +23,22 @@ export function isTppExcluded(vacancy: Vacancy): boolean {
   return false;
 }
 
+/**
+ * Identity of a listing for cross-source de-duplication. Location is part of
+ * the key on purpose: the same employer+title advertised in several places
+ * (e.g. one placement programme across nine UK cities) is a set of distinct
+ * adverts, not a repeat. Genuine reposts still share employer, title *and*
+ * location, and true repeats of the same advert share a URL or id.
+ */
+function identityKey(v: Vacancy): string {
+  return `et:${normaliseText(v.employer)}||${normaliseText(v.title)}||${normaliseText(v.location)}`;
+}
+
+/** Namespaced so URL, identity and id keys can never collide in one set. */
+function urlKey(v: Vacancy): string {
+  return `url:${normaliseText(v.applicationUrl || v.sourceUrl)}`;
+}
+
 export function findDuplicates(vacancies: Vacancy[]): DedupResult {
   const kept: Vacancy[] = [];
   const duplicates: Array<{ original: Vacancy; duplicate: Vacancy }> = [];
@@ -30,30 +46,31 @@ export function findDuplicates(vacancies: Vacancy[]): DedupResult {
 
   for (let i = 0; i < vacancies.length; i++) {
     const v = vacancies[i] as Vacancy;
-    const urlKey = normaliseText(v.applicationUrl || v.sourceUrl);
-    if (seen.has(urlKey)) {
-      const orig = kept.find((k) => normaliseText(k.applicationUrl || k.sourceUrl) === urlKey);
-      if (orig) duplicates.push({ original: orig, duplicate: v });
-      continue;
-    }
-    seen.add(urlKey);
 
-    const key = `${normaliseText(v.employer)}||${normaliseText(v.title)}`;
-    if (seen.has(key)) {
-      const orig = kept.find((k) => `${normaliseText(k.employer)}||${normaliseText(k.title)}` === key);
+    const byUrl = urlKey(v);
+    if (seen.has(byUrl)) {
+      const orig = kept.find((k) => urlKey(k) === byUrl);
       if (orig) duplicates.push({ original: orig, duplicate: v });
       continue;
     }
-    seen.add(key);
+    seen.add(byUrl);
+
+    const byIdentity = identityKey(v);
+    if (seen.has(byIdentity)) {
+      const orig = kept.find((k) => identityKey(k) === byIdentity);
+      if (orig) duplicates.push({ original: orig, duplicate: v });
+      continue;
+    }
+    seen.add(byIdentity);
 
     if (v.id) {
-      const idKey = `id:${v.id}`;
-      if (seen.has(idKey)) {
+      const byId = `id:${v.id}`;
+      if (seen.has(byId)) {
         const orig = kept.find((k) => k.id === v.id);
         if (orig) duplicates.push({ original: orig, duplicate: v });
         continue;
       }
-      seen.add(idKey);
+      seen.add(byId);
     }
 
     kept.push(v);

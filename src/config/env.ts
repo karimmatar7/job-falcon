@@ -50,6 +50,44 @@ export const envSchema = z
       .trim()
       .url("TELEGRAM_WEBHOOK_URL must be a valid URL")
       .optional(),
+    ADZUNA_APP_ID: z
+      .string()
+      .trim()
+      .min(
+        1,
+        "ADZUNA_APP_ID must not be empty (optional; both ADZUNA_APP_ID and ADZUNA_APP_KEY are required to enable Adzuna)",
+      )
+      .optional(),
+    ADZUNA_APP_KEY: z
+      .string()
+      .trim()
+      .min(
+        1,
+        "ADZUNA_APP_KEY must not be empty (optional; both ADZUNA_APP_ID and ADZUNA_APP_KEY are required to enable Adzuna)",
+      )
+      .optional(),
+    ADZUNA_COUNTRY: z
+      .string()
+      .trim()
+      .regex(
+        /^[A-Za-z]{2}$/,
+        "ADZUNA_COUNTRY must be a 2-letter ISO country code such as gb",
+      )
+      .optional(),
+    ADZUNA_MAX_PAGES: z
+      .string()
+      .trim()
+      .regex(/^\d+$/, "ADZUNA_MAX_PAGES must be an integer between 1 and 10")
+      .transform((value) => Number(value))
+      .refine((value) => value >= 1 && value <= 10, {
+        message: "ADZUNA_MAX_PAGES must be between 1 and 10",
+      })
+      .optional(),
+    UK_SPONSOR_REGISTER_URL: z
+      .string()
+      .trim()
+      .url("UK_SPONSOR_REGISTER_URL must be a valid URL")
+      .optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.BOT_TOKEN && !data.TELEGRAM_BOT_TOKEN) {
@@ -70,6 +108,16 @@ export interface AppConfig {
   readonly webhookSecret?: string;
   /** Public base URL of the deployment (used only by the setup script). */
   readonly webhookUrl?: string;
+  /** Adzuna UK source app id; the source activates only with a matching key. */
+  readonly adzunaAppId?: string;
+  /** Adzuna UK source app key; the source activates only with a matching id. */
+  readonly adzunaAppKey?: string;
+  /** Adzuna ISO 2-letter country code for sources (defaults to `gb`). */
+  readonly adzunaCountry?: string;
+  /** Adzuna result pages walked per search (1-10, defaults to 2). */
+  readonly adzunaMaxPages?: number;
+  /** Optional URL to the UK sponsor register CSV or gov.uk publication page. */
+  readonly sponsorRegisterUrl?: string;
 }
 
 export class ConfigError extends Error {
@@ -106,6 +154,11 @@ export function loadConfig(
     TELEGRAM_ALLOWED_USER_ID,
     TELEGRAM_WEBHOOK_SECRET,
     TELEGRAM_WEBHOOK_URL,
+    ADZUNA_APP_ID,
+    ADZUNA_APP_KEY,
+    ADZUNA_COUNTRY,
+    ADZUNA_MAX_PAGES,
+    UK_SPONSOR_REGISTER_URL,
   } = parsed.data;
 
   const telegramBotToken = TELEGRAM_BOT_TOKEN ?? BOT_TOKEN;
@@ -124,5 +177,12 @@ export function loadConfig(
     ...(TELEGRAM_WEBHOOK_URL === undefined
       ? {}
       : { webhookUrl: TELEGRAM_WEBHOOK_URL }),
+    ...(ADZUNA_APP_ID === undefined ? {} : { adzunaAppId: ADZUNA_APP_ID }),
+    ...(ADZUNA_APP_KEY === undefined ? {} : { adzunaAppKey: ADZUNA_APP_KEY }),
+    ...(ADZUNA_COUNTRY === undefined ? {} : { adzunaCountry: ADZUNA_COUNTRY }),
+    ...(ADZUNA_MAX_PAGES === undefined ? {} : { adzunaMaxPages: ADZUNA_MAX_PAGES }),
+    ...(UK_SPONSOR_REGISTER_URL === undefined
+      ? {}
+      : { sponsorRegisterUrl: UK_SPONSOR_REGISTER_URL }),
   };
 }

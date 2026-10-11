@@ -12,7 +12,7 @@ export function createBot(config: AppConfig, logger: Logger): Bot {
   const bot = new Bot(config.telegramBotToken);
 
   bot.use(createAuthMiddleware(config.allowedUserId, logger));
-  registerHandlers(bot, config);
+  registerHandlers(bot, config, logger);
 
   bot.catch((error) => {
     logger.error("Unhandled bot error", error.error);

@@ -30,7 +30,10 @@ async function main(): Promise<void> {
   }
 
   const logger = createLogger([config.telegramBotToken]);
-  logger.info(`Starting Job Scout (Phase 1). Authorised user: ${config.allowedUserId}`);
+  logger.info(`Starting JobFalcon (Phase 2). Authorised user: ${config.allowedUserId}`);
+  logger.info('Sponsor register configured', {
+    configured: config.sponsorRegisterUrl !== undefined,
+  });
 
   const bot = createBot(config, logger);
 

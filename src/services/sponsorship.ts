@@ -1,11 +1,86 @@
-import type { SponsorshipStatus } from "../models/vacancy.js";
+import type { EvidenceState, SponsorshipStatus } from "../models/vacancy.js";
 
 export interface SponsorshipEvidence {
   readonly status: SponsorshipStatus;
   readonly evidence: string;
+  readonly evidenceUrl: string;
+  readonly evidenceSnippet: string;
+  readonly reason: SponsorshipReason;
   readonly employerLicenceStatus: "yes" | "no" | "unknown";
   readonly employerLicenceEvidence: string;
   readonly lastVerifiedAt: string;
+}
+
+/** Machine-readable reasons for a sponsorship classification. */
+export type SponsorshipReason =
+  | "explicit_vacancy_support"
+  | "explicit_vacancy_refusal"
+  | "employer_licence_mentioned"
+  | "no_vacancy_evidence";
+
+/**
+ * Map the raw vacancy verdict plus authoritative employer verification onto the
+ * four human-facing evidence states. A verified employer licence is recorded as
+ * a *separate* capability fact and never becomes `vacancy_sponsorship_confirmed`.
+ */
+export function deriveEvidenceState(vacancy: {
+  readonly vacancySponsorshipStatus: SponsorshipStatus;
+  readonly employerSponsorshipVerified?: boolean | undefined;
+}): EvidenceState {
+  if (vacancy.vacancySponsorshipStatus === "confirmed") return "vacancy_sponsorship_confirmed";
+  if (vacancy.vacancySponsorshipStatus === "not_offered") return "sponsorship_unavailable";
+  if (vacancy.employerSponsorshipVerified === true) return "employer_sponsor_verified";
+  return "unconfirmed";
+}
+
+/** Stable, non-Markdown label for an evidence state (used by the formatter). */
+export function evidenceStateLabel(state: EvidenceState): string {
+  switch (state) {
+    case "vacancy_sponsorship_confirmed":
+      return "Sponsorship: CONFIRMED for this vacancy";
+    case "employer_sponsor_verified":
+      return "Sponsorship: EMPLOYER IS A LICENSED SPONSOR, but THIS vacancy is NOT confirmed - ask the employer";
+    case "sponsorship_unavailable":
+      return "Sponsorship: NOT OFFERED for this vacancy";
+    case "unconfirmed":
+    default:
+      return "Sponsorship: UNCONFIRMED - ask the employer";
+  }
+}
+
+/**
+ * A short, plain-language explanation of why a vacancy has its evidence state.
+ * Never upgrades employer registration into vacancy-level confirmation.
+ */
+export function explainEvidence(vacancy: {
+  readonly evidenceState?: EvidenceState | undefined;
+  readonly vacancySponsorshipStatus: SponsorshipStatus;
+  readonly employerSponsorshipVerified?: boolean | undefined;
+  readonly employerType?: "employer" | "recruiter" | "unknown" | undefined;
+  readonly endEmployer?: string | undefined;
+  readonly employerVerificationTarget?: string | undefined;
+}): string {
+  const state = vacancy.evidenceState ?? deriveEvidenceState(vacancy);
+  switch (state) {
+    case "vacancy_sponsorship_confirmed":
+      return "The vacancy's own text explicitly offers visa sponsorship.";
+    case "sponsorship_unavailable":
+      return "The vacancy's own text says sponsorship is not offered, or requires existing unrestricted UK work rights.";
+    case "employer_sponsor_verified": {
+      const who =
+        vacancy.employerType === "recruiter" && vacancy.endEmployer !== undefined
+          ? `the hiring employer (${vacancy.endEmployer})`
+          : vacancy.employerVerificationTarget !== undefined
+            ? `the employer (${vacancy.employerVerificationTarget})`
+            : "the employer";
+      return `Matched ${who} on the official register of licensed sponsors, but this specific vacancy does not confirm sponsorship.`;
+    }
+    case "unconfirmed":
+    default:
+      return vacancy.employerType === "recruiter"
+        ? "Advertised by a recruitment agency; the hiring employer was not identified, so sponsorship is unconfirmed."
+        : "No explicit sponsorship evidence in the vacancy, so sponsorship is unconfirmed.";
+  }
 }
 
 export interface SponsorshipContext {
@@ -63,6 +138,13 @@ const NEGATIVE_KEYWORDS = [
   "cannot provide visa",
   "unable to provide visa",
   "not provide visa",
+  "no visa sponsorship available",
+  "we are not able to sponsor",
+  "not able to offer sponsorship",
+  "not in a position to sponsor",
+  "cannot support sponsorship",
+  "unable to support sponsorship",
+  "sponsorship is not offered",
 ];
 
 const LICENCE_KEYWORDS = [
@@ -133,6 +215,9 @@ export function classifySponsorship(context: SponsorshipContext): SponsorshipEvi
       return {
         status: "not_offered",
         evidence: `Explicit statement indicates no sponsorship: "${wording}" (from ${context.sourceUrl})`,
+        evidenceUrl: context.sourceUrl,
+        evidenceSnippet: wording,
+        reason: "explicit_vacancy_refusal",
         employerLicenceStatus,
         employerLicenceEvidence,
         lastVerifiedAt: now,
@@ -147,6 +232,9 @@ export function classifySponsorship(context: SponsorshipContext): SponsorshipEvi
       return {
         status: "confirmed",
         evidence: `Explicit statement supporting sponsorship: "${wording}" (from ${context.sourceUrl})`,
+        evidenceUrl: context.sourceUrl,
+        evidenceSnippet: wording,
+        reason: "explicit_vacancy_support",
         employerLicenceStatus,
         employerLicenceEvidence,
         lastVerifiedAt: now,
@@ -157,6 +245,9 @@ export function classifySponsorship(context: SponsorshipContext): SponsorshipEvi
   return {
     status: "unclear",
     evidence: `No explicit sponsorship support found; silence about sponsorship (from ${context.sourceUrl})`,
+    evidenceUrl: context.sourceUrl,
+    evidenceSnippet: "",
+    reason: employerLicenceStatus === "yes" ? "employer_licence_mentioned" : "no_vacancy_evidence",
     employerLicenceStatus,
     employerLicenceEvidence,
     lastVerifiedAt: now,

@@ -84,4 +84,82 @@ describe("loadConfig", () => {
       loadConfig({ ...VALID_ENV, TELEGRAM_WEBHOOK_URL: "not-a-url" }),
     ).toThrow(ConfigError);
   });
+
+  it("parses valid optional Adzuna values", () => {
+    const config = loadConfig({
+      ...VALID_ENV,
+      ADZUNA_APP_ID: "app-id",
+      ADZUNA_APP_KEY: "app-key",
+      ADZUNA_COUNTRY: "GB",
+      ADZUNA_MAX_PAGES: "3",
+    });
+    expect(config.adzunaAppId).toBe("app-id");
+    expect(config.adzunaAppKey).toBe("app-key");
+    expect(config.adzunaCountry).toBe("GB");
+    expect(config.adzunaMaxPages).toBe(3);
+  });
+
+  it("leaves Adzuna values undefined when not configured", () => {
+    const config = loadConfig(VALID_ENV);
+    expect(config.adzunaAppId).toBeUndefined();
+    expect(config.adzunaAppKey).toBeUndefined();
+    expect(config.adzunaCountry).toBeUndefined();
+    expect(config.adzunaMaxPages).toBeUndefined();
+  });
+
+  it("rejects ADZUNA values when the secret is malformed", () => {
+    expect(() =>
+      loadConfig({ ...VALID_ENV, ADZUNA_APP_ID: " " }),
+    ).toThrow(ConfigError);
+    expect(() =>
+      loadConfig({ ...VALID_ENV, ADZUNA_APP_KEY: "" }),
+    ).toThrow(ConfigError);
+  });
+
+  it("rejects a malformed Adzuna country code", () => {
+    expect(() =>
+      loadConfig({ ...VALID_ENV, ADZUNA_COUNTRY: "gbr" }),
+    ).toThrow(ConfigError);
+  });
+
+  it("accepts Adzuna values without exposing them in errors", () => {
+    const secretLookingValue = "adzuna-super-secret-key";
+    try {
+      loadConfig({ ...VALID_ENV, ADZUNA_APP_KEY: secretLookingValue, ADZUNA_COUNTRY: "gbr" });
+      throw new Error("expected loadConfig to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as Error).message).not.toContain(secretLookingValue);
+    }
+  });
+
+  it("rejects out-of-range ADZUNA_MAX_PAGES", () => {
+    expect(() =>
+      loadConfig({ ...VALID_ENV, ADZUNA_MAX_PAGES: "11" }),
+    ).toThrow(ConfigError);
+    expect(() =>
+      loadConfig({ ...VALID_ENV, ADZUNA_MAX_PAGES: "0" }),
+    ).toThrow(ConfigError);
+  });
+
+  it("parses an optional sponsor register URL", () => {
+    const config = loadConfig({
+      ...VALID_ENV,
+      UK_SPONSOR_REGISTER_URL:
+        "https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers",
+    });
+    expect(config.sponsorRegisterUrl).toBe(
+      "https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers",
+    );
+  });
+
+  it("leaves the sponsor register URL undefined when unset", () => {
+    expect(loadConfig(VALID_ENV).sponsorRegisterUrl).toBeUndefined();
+  });
+
+  it("rejects a malformed sponsor register URL", () => {
+    expect(() =>
+      loadConfig({ ...VALID_ENV, UK_SPONSOR_REGISTER_URL: "not-a-url" }),
+    ).toThrow(ConfigError);
+  });
 });

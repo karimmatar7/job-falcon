@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifySponsorship } from "../../src/services/sponsorship.js";
+import {
+  classifySponsorship,
+  deriveEvidenceState,
+  evidenceStateLabel,
+  explainEvidence,
+} from "../../src/services/sponsorship.js";
 
 const base = {
   title: "Software Developer",
@@ -74,5 +79,114 @@ describe("classifySponsorship", () => {
 
     expect(result.status).toBe("unclear");
     expect(result.evidence).toContain("silence about sponsorship");
+  });
+
+  it("returns structured evidence with URL, snippet, reason and timestamp", () => {
+    const result = classifySponsorship({
+      ...base,
+      description: "Great role. We will sponsor a Skilled Worker visa.",
+    });
+
+    expect(result.evidenceUrl).toBe(base.sourceUrl);
+    expect(result.evidenceSnippet).toContain("will sponsor");
+    expect(result.reason).toBe("explicit_vacancy_support");
+    expect(Date.parse(result.lastVerifiedAt)).not.toBeNaN();
+  });
+
+  it("records an explicit refusal reason", () => {
+    const result = classifySponsorship({
+      ...base,
+      description: "We are unable to sponsor this position.",
+    });
+
+    expect(result.reason).toBe("explicit_vacancy_refusal");
+    expect(result.evidenceUrl).toBe(base.sourceUrl);
+  });
+
+  it("does not confirm when support and refusal conflict", () => {
+    const result = classifySponsorship({
+      ...base,
+      description:
+        "We will sponsor some roles. However, we are unable to sponsor this position.",
+    });
+
+    expect(result.status).not.toBe("confirmed");
+    expect(result.status).toBe("not_offered");
+  });
+});
+
+describe("deriveEvidenceState", () => {
+  it("maps explicit vacancy support to vacancy_sponsorship_confirmed", () => {
+    expect(
+      deriveEvidenceState({ vacancySponsorshipStatus: "confirmed" }),
+    ).toBe("vacancy_sponsorship_confirmed");
+  });
+
+  it("maps an authoritative employer verification to employer_sponsor_verified", () => {
+    expect(
+      deriveEvidenceState({
+        vacancySponsorshipStatus: "unclear",
+        employerSponsorshipVerified: true,
+      }),
+    ).toBe("employer_sponsor_verified");
+  });
+
+  it("never treats employer verification as vacancy confirmation", () => {
+    expect(
+      deriveEvidenceState({
+        vacancySponsorshipStatus: "unclear",
+        employerSponsorshipVerified: true,
+      }),
+    ).not.toBe("vacancy_sponsorship_confirmed");
+  });
+
+  it("maps silence to unconfirmed and refusal to sponsorship_unavailable", () => {
+    expect(deriveEvidenceState({ vacancySponsorshipStatus: "unclear" })).toBe("unconfirmed");
+    expect(deriveEvidenceState({ vacancySponsorshipStatus: "not_offered" })).toBe(
+      "sponsorship_unavailable",
+    );
+  });
+});
+
+describe("evidenceStateLabel", () => {
+  it("clearly distinguishes each state in plain text", () => {
+    expect(evidenceStateLabel("vacancy_sponsorship_confirmed")).toContain("CONFIRMED");
+    expect(evidenceStateLabel("employer_sponsor_verified")).toContain("NOT confirmed");
+    expect(evidenceStateLabel("unconfirmed")).toContain("UNCONFIRMED");
+    expect(evidenceStateLabel("sponsorship_unavailable")).toContain("NOT OFFERED");
+  });
+});
+
+describe("explainEvidence", () => {
+  it("explains confirmed and unavailable states from vacancy evidence", () => {
+    expect(explainEvidence({ vacancySponsorshipStatus: "confirmed" })).toContain(
+      "explicitly offers visa sponsorship",
+    );
+    expect(explainEvidence({ vacancySponsorshipStatus: "not_offered" })).toContain(
+      "sponsorship is not offered",
+    );
+  });
+
+  it("names the end employer for an agency-verified listing and still denies vacancy confirmation", () => {
+    const text = explainEvidence({
+      vacancySponsorshipStatus: "unclear",
+      employerSponsorshipVerified: true,
+      employerType: "recruiter",
+      endEmployer: "Acme Financial Services",
+    });
+
+    expect(text).toContain("Acme Financial Services");
+    expect(text).toContain("licensed sponsors");
+    expect(text).toContain("does not confirm");
+  });
+
+  it("retains uncertainty for an agency whose end employer is unknown", () => {
+    const text = explainEvidence({
+      vacancySponsorshipStatus: "unclear",
+      employerType: "recruiter",
+    });
+
+    expect(text.toLowerCase()).toContain("unconfirmed");
+    expect(text.toLowerCase()).toContain("recruitment agency");
   });
 });
