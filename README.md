@@ -11,18 +11,25 @@ it.** Everything weaker is labelled as such.
 | --------- | ------------------------------------------------------------- |
 | `/start`  | Greeting and short usage note.                                |
 | `/help`   | List available commands.                                      |
-| `/status` | Show configuration and source status.                         |
+| `/status` | Show bot status, schedule, next run, last run and alert state. |
 | `/search` | Search sources, returning confirmed-sponsorship vacancies first and up to five clearly-labelled unconfirmed alternatives. |
+| `/schedule` | Show and change the daily automatic search (see "Scheduled searches"). |
+| `/pause`  | Temporarily pause automatic alerts (searches may still run).  |
+| `/resume` | Resume automatic alerts.                                      |
+| `/save`   | Save the vacancy from the message you just received (kept through `/empty`). |
+| `/saved`  | List the vacancies you have saved.                            |
+| `/empty`  | Clear this chat of messages the bot is allowed to delete; saved vacancy messages are kept. |
 
 ## Setup
 
 1. `npm install`
 2. Copy `.env.example` to `.env` and fill in:
    - `TELEGRAM_BOT_TOKEN` – from [@BotFather](https://t.me/BotFather)
-   - `TELEGRAM_ALLOWED_USER_ID` – your numeric id from [@userinfobot](https://t.me/userinfobot)
-   - *(optional)* `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` – enables the UK Adzuna source
-   - *(optional)* `UK_SPONSOR_REGISTER_URL` – enables employer sponsor-register checks (see below)
-   - *(optional)* `JOB_SCOUT_DEBUG_DECISIONS` – per-listing audit log for diagnosing result counts
+   - `TELEGRAM_ALLOWED_USER_ID` - your numeric id from [@userinfobot](https://t.me/userinfobot)
+   - *(optional)* `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` - enables the UK Adzuna source
+   - *(optional)* `UK_SPONSOR_REGISTER_URL` - enables employer sponsor-register checks (see below)
+   - *(optional)* `JOB_SCOUT_DEBUG_DECISIONS` - per-listing audit log for diagnosing result counts
+   - *(optional)* `JOB_SCOUT_SCHEDULE_TIME` / `JOB_SCOUT_TIMEZONE` / `JOB_SCOUT_MAX_NOTIFICATIONS` / `JOB_SCOUT_STATE_DIR` - Phase 3 scheduling defaults (see below)
 3. `npm run dev` (watch mode) or `npm start`.
 
 `.env` is personal data and must never be committed or logged.
@@ -227,6 +234,131 @@ or secrets. Leave it unset in normal use.
   to respect the free-tier rate limits and enforces a 1s minimum interval between
   requests. A half-configured pair is skipped with a warning.
 
+## Scheduled searches, notifications and `/empty` (Phase 3)
+
+### Daily automatic searches
+
+The bot can run the exact same pipeline as `/search` automatically once a day
+(`src/services/scheduling/scheduler.ts`, `searchRunner.ts`). The default is
+08:00 in `Europe/London`, enabled on first start; every value is configurable:
+
+```
+/schedule                   show current schedule and options
+/schedule on                enable automatic searches
+/schedule off               disable automatic searches (settings are kept)
+/schedule time 07:30        set the daily time (24-hour HH:MM)
+/schedule timezone Europe/London   set the IANA timezone
+```
+
+State is kept separate on purpose:
+
+| Command   | Effect                                        |
+| --------- | --------------------------------------------- |
+| `/schedule off` | Stops the daily search entirely.        |
+| `/pause`  | Searches may still run, but **no alerts are sent**; new jobs stay queued and are delivered on `/resume`. |
+| `/resume` | Alerts resume, and anything queued while paused is delivered. |
+
+- Timezone arithmetic uses the platform `Intl` API (no dependency), so DST
+  transitions are handled correctly.
+- Runs cannot overlap: the scheduler keeps an in-memory lock and a persisted
+  `lastRun` marker, so a restart or a slow run never fires a double batch.
+- After a restart the scheduler resumes: an interrupted run is marked failed,
+  pending notifications are retried, and one missed run is caught up.
+- The scheduled search goes through the shared `RealJobSearchService` pipeline
+  (relevance scoring, UK eligibility, sponsorship classifier, employer-register
+  safeguards, deduplication, paid-training and seniority filters, apply-link
+  validation), so it can never produce results `/search` would not.
+- A short in-process cache (10 minutes) means an identical retried query does
+  not hit Adzuna/Remotive twice; the existing per-source rate limits are
+  unchanged.
+
+### What triggers an alert
+
+Alerts are only sent for **newly discovered** jobs, never for every listing a
+run returns. Each vacancy is fingerprinted three ways (canonical URL, source id,
+and normalised employer+title+location), and all three are persisted
+(`src/services/scheduling/jobIdentity.ts`), so:
+
+- the same vacancy re-appearing on a second source is not alerted twice;
+- a repost of the same employer/title/location is not alerted twice;
+- restarting the bot cannot replay a batch.
+
+Confirmed vacancy-specific sponsorship is prioritised first, then relevant
+UK-eligible alternatives above the relevance floor, clearly labelled
+"sponsorship unconfirmed". A verified sponsor-register entry is reported as a
+separate capability line and never upgrades a vacancy to confirmed, exactly as
+in `/search`.
+
+Per run a maximum of 5 notifications is sent (configurable with
+`JOB_SCOUT_MAX_NOTIFICATIONS`); extra matches are marked seen and summarised
+with a pointer to `/search`. Delivery is durable: discovery is written to disk
+*before* any message is sent, and failed deliveries stay in a pending queue with
+their attempt count and error. A crash between discovery and delivery therefore
+cannot lose an alert, and an undelivered alert is never recorded as delivered.
+
+### Saved vacancies (`/save`, `/saved`)
+
+`/save` keeps a vacancy (and the Telegram message it arrived in) so `/empty`
+cannot delete it:
+
+- `/save` saves the vacancy from the most recent vacancy message. Because the
+  notifier sends one message per job, this is "the job I just received".
+- `/save <number>` picks one when a single message (such as a `/search` digest)
+  contained several.
+- Replying `/save` to a specific vacancy message saves from that message.
+
+Saved records live in their own part of the state document, outside the tracked
+conversation, so they survive restarts and `/empty`. Each record remembers the
+Telegram message id it came from; `/empty` never attempts that message. If the
+saved message is already older than Telegram's 48-hour deletion window, the
+record is still kept and the report says so. `/saved` lists what you have saved.
+
+### `/empty` and Telegram's real deletion limits
+
+Telegram's API has **no "clear chat history" call**. A bot can only delete a
+message when it knows the message id, and only within 48 hours of sending.
+`/empty` therefore:
+
+- tracks the ids of the bot's own outgoing messages (via an API transformer)
+  and the authorised user's incoming private-chat messages;
+- deletes every tracked message in that exact chat, skipping anything older
+  than 48 hours without pretending;
+- **never deletes a message carrying a saved vacancy** (see `/save` above), at
+  any age, and never touches the saved records themselves;
+- reports truthful counts - messages deleted, saved messages preserved, and
+  messages that could not be deleted (with the reason) - and suggests
+  Telegram's own "Clear history" as the practical fallback;
+- never deletes its own confirmation (it is sent after the cleanup);
+- never touches schedule settings, seen-job history, the notification queue or
+  any other persistent data.
+
+Older history that predates tracking is not reachable by a bot at all, which is
+why a fresh install of `/empty` only covers messages seen since this version ran
+(`src/services/conversation/`).
+
+**True full-history deletion needs MTProto.** The Bot HTTP API cannot enumerate
+a chat's history or delete messages it never saw, so neither the bot nor this
+`/empty` can remove the entire conversation. Deleting *all* historical messages
+(both sides) would require a separate MTProto client acting as your personal
+Telegram account (an `api_id`/`api_hash` and a signed-in user session), which has
+full account access and is deliberately **not** implemented. For a complete wipe,
+use Telegram's own "Clear history" in the chat menu, which removes both sides.
+
+### Persistence
+
+All Phase 3 state lives in one JSON document
+(`src/services/state/stateStore.ts`): schedule settings, `nextRunAt`, recent
+runs, seen-job identifiers, the pending-notification queue, per-chat message
+ids, saved vacancies and the small `/save` lookup index. Writes are atomic
+(temp file + rename) and serialised, reads validate the whole document, and a
+corrupt file is quarantined to `*.corrupt-<ts>` so startup never fails. New
+sections added after v1 default to empty, so an existing state file keeps
+loading unchanged. The file lives in `./data` (or the OS temp dir on Vercel)
+and can be relocated with `JOB_SCOUT_STATE_DIR`. No secrets are stored there.
+In serverless/webhook mode the scheduler timer does not run (Vercel has no
+long-running process); commands still answer, but the daily search is designed
+for local long-polling (`npm run dev` / `npm start`).
+
 ## Known limitations
 
 - A listing that simply does not mention sponsorship stays `unclear`, even if
@@ -252,11 +384,21 @@ or secrets. Leave it unset in normal use.
 
 ## Project layout
 
-- `src/bot/` – Telegram bot wiring, auth, router, and handlers (`/search`).
-- `src/services/` – search pipeline, deduplication, relevance scoring,
+- `src/bot/` - Telegram bot wiring, auth, router, handlers (`/search`,
+  `/schedule`, `/pause`, `/resume`, `/save`, `/saved`, `/empty`), the shared
+  vacancy-card formatter (`vacancyCard.ts`) and the Phase 3 service bundle
+  (`services.ts`).
+- `src/services/` - search pipeline, deduplication, relevance scoring,
   sponsorship classifier, employer identity resolution, sponsor register, job
   sources, advert-quality filtering (`listingQuality.ts`), application-link
-  validation (`applicationUrl.ts`) and seniority eligibility (`seniority.ts`).
-- `src/models/` – Zod schemas / types (`Vacancy`, `Profile`).
-- `tests/` – Vitest unit tests for the pipeline, sources, classifier, employer
-  identity and sponsor register.
+  validation (`applicationUrl.ts`), seniority eligibility (`seniority.ts`) and
+  saved vacancies / the `/save` index (`savedVacancies.ts`).
+- `src/services/state/` - durable JSON state store (atomic writes).
+- `src/services/scheduling/` - schedule/timezone arithmetic, `scheduler.ts`,
+  `searchRunner.ts` (cached pipeline), `notifications.ts` (seen-set, pending
+  queue, delivery), `jobIdentity.ts` (stable job fingerprints).
+- `src/services/conversation/` - message-id tracking and `/empty` cleanup.
+- `src/models/` - Zod schemas / types (`Vacancy`, `Profile`).
+- `tests/` - Vitest unit tests for the pipeline, sources, classifier, employer
+  identity, sponsor register, scheduler, notifications, saved vacancies,
+  `/empty` and stores.

@@ -1,0 +1,333 @@
+{
+  "version": 1,
+  "schedule": {
+    "settings": {
+      "enabled": true,
+      "alertsPaused": false,
+      "time": "23:08",
+      "timeZone": "Europe/London",
+      "keywords": [
+        "software developer"
+      ],
+      "limit": 10
+    },
+    "nextRunAt": "2026-10-13T22:08:00.000Z",
+    "lastRun": {
+      "startedAt": "2026-10-12T22:08:00.014Z",
+      "finishedAt": "2026-10-12T22:08:02.675Z",
+      "trigger": "schedule",
+      "status": "success",
+      "discovered": 0,
+      "notified": 0,
+      "failed": 0,
+      "summarised": 0
+    },
+    "recentRuns": [
+      {
+        "startedAt": "2026-10-12T21:26:00.007Z",
+        "finishedAt": "2026-10-12T21:26:04.776Z",
+        "trigger": "schedule",
+        "status": "success",
+        "discovered": 2,
+        "notified": 2,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "startedAt": "2026-10-12T21:36:00.005Z",
+        "finishedAt": "2026-10-12T21:36:00.010Z",
+        "trigger": "schedule",
+        "status": "success",
+        "discovered": 0,
+        "notified": 0,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "startedAt": "2026-10-12T21:38:00.017Z",
+        "finishedAt": "2026-10-12T21:38:04.675Z",
+        "trigger": "schedule",
+        "status": "success",
+        "discovered": 0,
+        "notified": 0,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "startedAt": "2026-10-12T21:49:00.010Z",
+        "finishedAt": "2026-10-12T21:49:04.969Z",
+        "trigger": "schedule",
+        "status": "success",
+        "discovered": 0,
+        "notified": 0,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "startedAt": "2026-10-12T22:08:00.014Z",
+        "finishedAt": "2026-10-12T22:08:02.675Z",
+        "trigger": "schedule",
+        "status": "success",
+        "discovered": 0,
+        "notified": 0,
+        "failed": 0,
+        "summarised": 0
+      }
+    ],
+    "lastCompletionNoticeSlot": "2026-10-12T22:08:00.000Z"
+  },
+  "notifications": {
+    "seen": {
+      "et:codeforai||softwareengineeraicodetrainerpythonwebfullstack||usaukindiaaustraliairelandnewzealandphilippinespakistansingaporemexico": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.671Z",
+        "status": "notified"
+      },
+      "id:remotive:remotive-2091149": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.671Z",
+        "status": "notified"
+      },
+      "id:remotive-2091149": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.671Z",
+        "status": "notified"
+      },
+      "url:https://remotive.com/remote-jobs/software-development/software-engineer-ai-code-trainer-python-web-full-stack-2091149": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.671Z",
+        "status": "notified"
+      },
+      "et:inspirepeople||softwaredevelopmentengineerintestsdet||claseswansea": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.772Z",
+        "status": "notified"
+      },
+      "id:adzuna:adzuna-5903986085": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.772Z",
+        "status": "notified"
+      },
+      "id:adzuna-5903986085": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.772Z",
+        "status": "notified"
+      },
+      "url:https://adzuna.co.uk/jobs/land/ad/5903986085?se=WLybhYPG8RGWsPUaVM20eg&v=036B1130F7746A8A16157B9CBAA42F17A57752F6": {
+        "firstSeenAt": "2026-10-12T21:26:04.542Z",
+        "lastSeenAt": "2026-10-12T21:26:04.542Z",
+        "notifiedAt": "2026-10-12T21:26:04.772Z",
+        "status": "notified"
+      }
+    },
+    "pending": [],
+    "history": [
+      {
+        "at": "2026-10-12T21:26:04.776Z",
+        "discovered": 2,
+        "queued": 2,
+        "delivered": 2,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "at": "2026-10-12T21:36:00.010Z",
+        "discovered": 0,
+        "queued": 0,
+        "delivered": 0,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "at": "2026-10-12T21:38:04.675Z",
+        "discovered": 0,
+        "queued": 0,
+        "delivered": 0,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "at": "2026-10-12T21:49:04.969Z",
+        "discovered": 0,
+        "queued": 0,
+        "delivered": 0,
+        "failed": 0,
+        "summarised": 0
+      },
+      {
+        "at": "2026-10-12T22:08:02.675Z",
+        "discovered": 0,
+        "queued": 0,
+        "delivered": 0,
+        "failed": 0,
+        "summarised": 0
+      }
+    ]
+  },
+  "conversations": {
+    "byChat": {
+      "1032637602": {
+        "messages": [
+          {
+            "id": 199,
+            "at": "2026-10-12T22:06:46.665Z",
+            "direction": "bot"
+          },
+          {
+            "id": 200,
+            "at": "2026-10-12T22:07:18.074Z",
+            "direction": "user"
+          },
+          {
+            "id": 201,
+            "at": "2026-10-12T22:07:18.147Z",
+            "direction": "bot"
+          },
+          {
+            "id": 202,
+            "at": "2026-10-12T22:08:02.672Z",
+            "direction": "bot"
+          }
+        ]
+      }
+    }
+  },
+  "savedVacancies": {
+    "entries": [
+      {
+        "id": 1,
+        "chatId": 1032637602,
+        "key": "et:inspirepeople||softwaredevelopmentengineerintestsdet||claseswansea",
+        "keys": [
+          "et:inspirepeople||softwaredevelopmentengineerintestsdet||claseswansea",
+          "id:adzuna:adzuna-5903986085",
+          "id:adzuna-5903986085",
+          "url:https://adzuna.co.uk/jobs/details/5903986085"
+        ],
+        "vacancy": {
+          "id": "adzuna-5903986085",
+          "title": "Software Development Engineer in Test (SDET)",
+          "employer": "Inspire People",
+          "location": "Clase, Swansea",
+          "description": "Become part of a mission driven digital team helping to build secure, resilient services used by millions across the UK . The Driver and Vehicle Licensing Agency (DVLA), in partnership with Inspire People, is seeking Software Development Engineers in Test (SDET) with strong automation testing capability, experience using modern programming languages, and practical Continuous Integration expertise. Based in Swansea, this permanent opportunity offers hybrid working (minimum 60% office attendance)…",
+          "source": "adzuna",
+          "sourceUrl": "https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa",
+          "applicationUrl": "https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa",
+          "datePosted": "2026-09-30T15:55:37Z",
+          "salary": "£39,163",
+          "vacancySponsorshipStatus": "unclear",
+          "sponsorshipEvidence": "No explicit sponsorship support found; silence about sponsorship (from https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa)",
+          "sponsorshipEvidenceUrl": "https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa",
+          "sponsorshipEvidenceSnippet": "",
+          "sponsorshipEvidenceReason": "no_vacancy_evidence",
+          "employerSponsorLicence": "unknown",
+          "employerLicenceEvidence": "No explicit licence information found in listing",
+          "employerType": "employer",
+          "employerVerificationTarget": "Inspire People",
+          "sponsorRegisterStatus": "not_found",
+          "sponsorRegisterUrl": "https://assets.publishing.service.gov.uk/media/6acca34fb016250bca013baf/SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-10-12.csv",
+          "sponsorRegisterCheckedAt": "2026-10-12T22:06:18.300Z",
+          "sponsorRegisterRetrievedAt": "2026-10-12T22:05:59.789Z",
+          "sponsorRegisterUpdatedAt": "2026-10-12",
+          "employerRegisterStatus": "not_found",
+          "evidenceState": "unconfirmed",
+          "lastVerifiedAt": "2026-10-12T22:06:17.920Z",
+          "locationEligibility": "eligible",
+          "matchScore": 48,
+          "matchExplanation": "Score 48/100: tech role fit, matching skills: testing (required), UK-eligible location",
+          "fallbackReason": "Score 48/100: tech role fit, matching skills: testing (required), UK-eligible location. Included because it matches your profile; this listing contains no vacancy-specific sponsorship evidence."
+        },
+        "savedAt": "2026-10-12T22:06:40.458Z",
+        "messageId": 193
+      }
+    ],
+    "nextId": 2
+  },
+  "vacancyIndex": {
+    "items": [
+      {
+        "chatId": 1032637602,
+        "messageId": 193,
+        "at": "2026-10-12T22:06:18.380Z",
+        "vacancy": {
+          "id": "remotive-2091149",
+          "title": "Software Engineer / AI Code Trainer (Python, Web, Full Stack)",
+          "employer": "CodeForAI",
+          "location": "USA, UK, India, Australia, Ireland, New Zealand, Philippines, Pakistan, Singapore, Mexico",
+          "description": "Who Should Apply We are looking for developers from all technical backgrounds and language specializations. If you write clean code and understand software design, you are a fit: Software Engineers & Computer Scientists specializing in algorithms, data structures, or system design. Full-Stack & Web Developers working with modern front-end or back-end frameworks (JavaScript, TypeScript, React, Node.js, Python, PHP, Ruby, etc.). Backend & Systems Developers experienced in languages such as C++, Java, Go, Rust, or Python. DevOps & Database Engineers familiar with API design, SQL/NoSQL databases, or scripting. Role & Responsibilities As an AI Code Trainer , you will evaluate model-generated code, author reference solutions, and stress-test AI reasoning across various engineering domains. Code Auditing & Quality Analysis: Critique AI-generated solutions for logic, performance, security vulnerabilities, syntax, and coding best practices. Gold-Standard Solutions: Write clean, production-grade reference code and clear technical explanations for complex programming prompts. Test Design: Build unit tests and edge-case scenarios to evaluate model accuracy and expose edge-case failures. Technical Feedback: Write structured explanations detailing why an AI solution succeeds, fails, or produces bugs. Requirements Software Engineering Proficiency: Strong core fundamentals in at least one major programming language or web stack (e.g., Python, JavaScript/TypeScript, Java, C++, Go, C#, Rust, PHP). Debugging & Code Review: Ability to quickly analyze third-party code, catch subtle logical errors, and evaluate efficiency. Technical Communication: Clear written English to explain technical concepts and code review rationales effectively. Eligible Locations: Resident of USA, UK, Canada, Australia, New Zealand, India, Pakistan, or Philippines . Why Join Us? $50–$125/hr commensurate with your technical domain expertise and task complexity. Weekly Guaranteed Payouts directly to your choice of PayPal or Payoneer . 100% Remote & Asynchronous: Total schedule control—work whenever and wherever you choose with no fixed minimum hours. How to Apply Apply directly on our website at https://codeforai.tech/",
+          "source": "remotive",
+          "sourceUrl": "https://remotive.com/remote-jobs/software-development/software-engineer-ai-code-trainer-python-web-full-stack-2091149",
+          "applicationUrl": "https://remotive.com/remote-jobs/software-development/software-engineer-ai-code-trainer-python-web-full-stack-2091149",
+          "datePosted": "2026-10-05T05:15:43",
+          "salary": "$45-$120/Hour",
+          "vacancySponsorshipStatus": "unclear",
+          "sponsorshipEvidence": "No explicit sponsorship support found; silence about sponsorship (from https://remotive.com/remote-jobs/software-development/software-engineer-ai-code-trainer-python-web-full-stack-2091149)",
+          "sponsorshipEvidenceUrl": "https://remotive.com/remote-jobs/software-development/software-engineer-ai-code-trainer-python-web-full-stack-2091149",
+          "sponsorshipEvidenceSnippet": "",
+          "sponsorshipEvidenceReason": "no_vacancy_evidence",
+          "employerSponsorLicence": "unknown",
+          "employerLicenceEvidence": "No explicit licence information found in listing",
+          "employerType": "employer",
+          "employerVerificationTarget": "CodeForAI",
+          "sponsorRegisterStatus": "not_found",
+          "sponsorRegisterUrl": "https://assets.publishing.service.gov.uk/media/6acca34fb016250bca013baf/SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-10-12.csv",
+          "sponsorRegisterCheckedAt": "2026-10-12T22:06:18.299Z",
+          "sponsorRegisterRetrievedAt": "2026-10-12T22:05:59.789Z",
+          "sponsorRegisterUpdatedAt": "2026-10-12",
+          "employerRegisterStatus": "not_found",
+          "evidenceState": "unconfirmed",
+          "lastVerifiedAt": "2026-10-12T22:06:16.929Z",
+          "locationEligibility": "possibly",
+          "matchScore": 58,
+          "matchExplanation": "Score 58/100: tech role fit, matching skills: web development, javascript, typescript (required), remote/region unclear for UK, AI-related role",
+          "fallbackReason": "Score 58/100: tech role fit, matching skills: web development, javascript, typescript (required), remote/region unclear for UK, AI-related role. Included because it matches your profile; this listing contains no vacancy-specific sponsorship evidence."
+        }
+      },
+      {
+        "chatId": 1032637602,
+        "messageId": 193,
+        "at": "2026-10-12T22:06:18.380Z",
+        "vacancy": {
+          "id": "adzuna-5903986085",
+          "title": "Software Development Engineer in Test (SDET)",
+          "employer": "Inspire People",
+          "location": "Clase, Swansea",
+          "description": "Become part of a mission driven digital team helping to build secure, resilient services used by millions across the UK . The Driver and Vehicle Licensing Agency (DVLA), in partnership with Inspire People, is seeking Software Development Engineers in Test (SDET) with strong automation testing capability, experience using modern programming languages, and practical Continuous Integration expertise. Based in Swansea, this permanent opportunity offers hybrid working (minimum 60% office attendance)…",
+          "source": "adzuna",
+          "sourceUrl": "https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa",
+          "applicationUrl": "https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa",
+          "datePosted": "2026-09-30T15:55:37Z",
+          "salary": "£39,163",
+          "vacancySponsorshipStatus": "unclear",
+          "sponsorshipEvidence": "No explicit sponsorship support found; silence about sponsorship (from https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa)",
+          "sponsorshipEvidenceUrl": "https://www.adzuna.co.uk/jobs/details/5903986085?utm_medium=api&utm_source=bfa775aa",
+          "sponsorshipEvidenceSnippet": "",
+          "sponsorshipEvidenceReason": "no_vacancy_evidence",
+          "employerSponsorLicence": "unknown",
+          "employerLicenceEvidence": "No explicit licence information found in listing",
+          "employerType": "employer",
+          "employerVerificationTarget": "Inspire People",
+          "sponsorRegisterStatus": "not_found",
+          "sponsorRegisterUrl": "https://assets.publishing.service.gov.uk/media/6acca34fb016250bca013baf/SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-10-12.csv",
+          "sponsorRegisterCheckedAt": "2026-10-12T22:06:18.300Z",
+          "sponsorRegisterRetrievedAt": "2026-10-12T22:05:59.789Z",
+          "sponsorRegisterUpdatedAt": "2026-10-12",
+          "employerRegisterStatus": "not_found",
+          "evidenceState": "unconfirmed",
+          "lastVerifiedAt": "2026-10-12T22:06:17.920Z",
+          "locationEligibility": "eligible",
+          "matchScore": 48,
+          "matchExplanation": "Score 48/100: tech role fit, matching skills: testing (required), UK-eligible location",
+          "fallbackReason": "Score 48/100: tech role fit, matching skills: testing (required), UK-eligible location. Included because it matches your profile; this listing contains no vacancy-specific sponsorship evidence."
+        }
+      }
+    ]
+  }
+}

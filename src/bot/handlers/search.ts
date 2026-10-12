@@ -1,107 +1,15 @@
 import type { Context } from "grammy";
-import type { Vacancy } from "../../models/vacancy.js";
 import { RealJobSearchService } from "../../services/jobSearch.js";
 import type { JobSearchResult, JobSearchStats } from "../../services/jobSearch.js";
-import { deriveEvidenceState, evidenceStateLabel } from "../../services/sponsorship.js";
-import type { EvidenceState } from "../../models/vacancy.js";
-import { validateApplicationUrl } from "../../services/applicationUrl.js";
+import type { Vacancy } from "../../models/vacancy.js";
 import { createDefaultSponsorRegister } from "../../services/sponsorRegister.js";
 import type { Logger } from "../../utils/logger.js";
+import type { BotServices } from "../services.js";
 import { parseCommand } from "../command.js";
 import { parseSearchArgs } from "../searchArgs.js";
+import { escapeMd, formatVacancy } from "../vacancyCard.js";
 
 const MAX_MESSAGE_LENGTH = 4000;
-
-function escapeMd(text: string): string {
-  return text.replace(/[_*[\]()~>#+\-=|{}.!`\\]/g, '\\$&');
-}
-
-type ResultGroup = "confirmed" | "alternative" | "not_offered";
-
-function groupFor(vacancy: Vacancy): ResultGroup {
-  if (vacancy.vacancySponsorshipStatus === "confirmed") return "confirmed";
-  if (vacancy.vacancySponsorshipStatus === "not_offered") return "not_offered";
-  return "alternative";
-}
-
-function sponsorshipLabel(vacancy: Vacancy, group: ResultGroup): string {
-  if (group === "confirmed") return evidenceStateLabel("vacancy_sponsorship_confirmed");
-  if (group === "alternative") return evidenceStateLabel(deriveEvidenceState(vacancy));
-  return evidenceStateLabel("sponsorship_unavailable");
-}
-
-/**
- * The stored employer-register outcome, falling back to the legacy positive
- * flag for older vacancy data that predates `employerRegisterStatus`.
- */
-function employerRegisterStatusOf(v: Vacancy): Vacancy["employerRegisterStatus"] {
-  if (v.employerRegisterStatus !== undefined) return v.employerRegisterStatus;
-  if (v.employerSponsorshipVerified === true) return "verified";
-  return undefined;
-}
-
-/**
- * A concise employer-register line, kept separate from the vacancy-level
- * sponsorship status. It states the employer's licence capability only and never
- * implies the vacancy offers sponsorship (and `not_found` never means the
- * employer is unlicensed).
- */
-function employerRegisterLine(v: Vacancy): string | null {
-  switch (employerRegisterStatusOf(v)) {
-    case "verified": {
-      const entry = v.employerVerificationTarget ?? v.employer;
-      const updated = v.sponsorRegisterUpdatedAt
-        ? `, register updated ${v.sponsorRegisterUpdatedAt}`
-        : "";
-      return `Employer register: LICENSED SPONSOR - matched "${entry}" on the official register${updated}.`;
-    }
-    case "not_found":
-      return "Employer register: no exact match on the official register - this does NOT prove the employer is unlicensed (legal/trading names can differ).";
-    case "unavailable":
-      return "Employer register: could not be checked (register unavailable) - no conclusion either way.";
-    case "not_checked":
-      return "Employer register: not checked - advertised by a recruitment agency and the hiring employer was not identified.";
-    default:
-      return null;
-  }
-}
-
-function formatVacancy(v: Vacancy, group: ResultGroup): string {
-  const parts: string[] = [];
-  parts.push(`*${escapeMd(v.title)}*`);
-  parts.push(escapeMd(`Employer: ${v.employer}`));
-  parts.push(escapeMd(`Location: ${v.location}${v.locationEligibility ? ` (UK eligibility: ${v.locationEligibility})` : ''}`));
-  if (v.salary) parts.push(escapeMd(`Salary: ${v.salary}`));
-  parts.push(escapeMd(sponsorshipLabel(v, group)));
-  const registerLine = employerRegisterLine(v);
-  if (registerLine !== null) parts.push(escapeMd(registerLine));
-
-  if (group === "confirmed" && v.sponsorshipEvidence) {
-    parts.push(escapeMd(`Evidence: ${v.sponsorshipEvidence}`));
-  } else if (group === "alternative") {
-    if (v.fallbackReason) parts.push(escapeMd(`Why shown: ${v.fallbackReason}`));
-    const note =
-      v.employerSponsorshipVerified === true
-        ? "Note: an authoritative UK register confirms this employer is licensed to sponsor, but the vacancy itself does not confirm sponsorship for this role."
-        : v.employerSponsorLicence === "yes"
-          ? "Note: the listing mentions a sponsor licence, but this does not confirm sponsorship for this specific role."
-          : "Note: this listing contains no sponsorship evidence. Ask the employer whether they can sponsor this role.";
-    parts.push(escapeMd(note));
-  } else if (v.sponsorshipEvidence) {
-    parts.push(escapeMd(`Evidence: ${v.sponsorshipEvidence}`));
-  }
-
-  if (v.matchScore !== undefined) parts.push(escapeMd(`Match: ${v.matchScore}/100`));
-  const application = validateApplicationUrl(v.applicationUrl);
-  if (application.status === 'direct' && application.url !== undefined) {
-    parts.push(escapeMd(`Apply: ${application.url}`));
-  } else {
-    const note = v.applicationUrlNote ?? application.note ?? 'no direct listing URL was provided';
-    parts.push(escapeMd(`Apply: link unavailable (${note})`));
-  }
-  if (v.source) parts.push(escapeMd(`Source: ${v.source}`));
-  return parts.join('\n');
-}
 
 function sourceSummary(stats: JobSearchStats): string {
   const parts = stats.sources.map(s => {
@@ -202,7 +110,20 @@ function isTruthyFlag(value: string | undefined): boolean {
   return normalised === '1' || normalised === 'true' || normalised === 'yes' || normalised === 'on';
 }
 
-export async function searchHandler(ctx: Context, logger?: Logger): Promise<void> {
+/** The vacancies a `/search` reply actually renders (confirmed + alternatives). */
+export function searchReplyVacancies(result: JobSearchResult): Vacancy[] {
+  return result.vacancies.filter(
+    (vacancy) =>
+      vacancy.vacancySponsorshipStatus === "confirmed" ||
+      vacancy.vacancySponsorshipStatus === "unclear",
+  );
+}
+
+export async function searchHandler(
+  ctx: Context,
+  logger?: Logger,
+  services?: BotServices,
+): Promise<void> {
   const parsed = parseCommand(ctx.message?.text);
   const args = parseSearchArgs(parsed?.args ?? []);
 
@@ -223,7 +144,24 @@ export async function searchHandler(ctx: Context, logger?: Logger): Promise<void
       keywords: args.keywords,
       ...(args.location === undefined ? {} : { location: args.location }),
     });
-    await ctx.reply(buildSearchReply(result), { parse_mode: 'MarkdownV2' });
+    const sent = (await ctx.reply(buildSearchReply(result), {
+      parse_mode: "MarkdownV2",
+    })) as { message_id?: number } | undefined;
+
+    // Index the vacancy message(s) so a following /save can resolve them.
+    const chatId = ctx.chat?.id;
+    const messageId = sent?.message_id;
+    const shown = searchReplyVacancies(result);
+    if (
+      services !== undefined &&
+      typeof chatId === "number" &&
+      typeof messageId === "number" &&
+      shown.length > 0
+    ) {
+      await services.savedVacancies
+        .recordDelivered(chatId, messageId, shown)
+        .catch(() => undefined);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await ctx.reply(`Search failed: ${msg}`);

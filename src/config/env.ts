@@ -88,6 +88,54 @@ export const envSchema = z
       .trim()
       .url("UK_SPONSOR_REGISTER_URL must be a valid URL")
       .optional(),
+    JOB_SCOUT_STATE_DIR: z
+      .string()
+      .trim()
+      .min(1, "JOB_SCOUT_STATE_DIR must not be empty")
+      .optional(),
+    JOB_SCOUT_SCHEDULE_TIME: z
+      .string()
+      .trim()
+      .regex(
+        /^([01]\d|2[0-3]):([0-5]\d)$/,
+        "JOB_SCOUT_SCHEDULE_TIME must be HH:MM in 24-hour time",
+      )
+      .optional(),
+    JOB_SCOUT_TIMEZONE: z
+      .string()
+      .trim()
+      .min(1, "JOB_SCOUT_TIMEZONE must not be empty")
+      .refine(
+        (value) => {
+          try {
+            new Intl.DateTimeFormat("en-US", { timeZone: value });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: "JOB_SCOUT_TIMEZONE must be a valid IANA timezone such as Europe/London" },
+      )
+      .optional(),
+    JOB_SCOUT_SCHEDULE_ENABLED: z
+      .preprocess(
+        (value) => (typeof value === "string" ? value.trim().toLowerCase() : value),
+        z
+          .enum(["1", "0", "true", "false", "yes", "no", "on", "off"])
+          .optional()
+          .transform((value) =>
+            value === undefined ? undefined : ["1", "true", "yes", "on"].includes(value),
+          ),
+      ),
+    JOB_SCOUT_MAX_NOTIFICATIONS: z
+      .string()
+      .trim()
+      .regex(/^\d+$/, "JOB_SCOUT_MAX_NOTIFICATIONS must be an integer between 1 and 20")
+      .transform((value) => Number(value))
+      .refine((value) => value >= 1 && value <= 20, {
+        message: "JOB_SCOUT_MAX_NOTIFICATIONS must be between 1 and 20",
+      })
+      .optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.BOT_TOKEN && !data.TELEGRAM_BOT_TOKEN) {
@@ -118,6 +166,16 @@ export interface AppConfig {
   readonly adzunaMaxPages?: number;
   /** Optional URL to the UK sponsor register CSV or gov.uk publication page. */
   readonly sponsorRegisterUrl?: string;
+  /** Directory for the durable state file (schedule, seen jobs, history). */
+  readonly stateDir?: string;
+  /** Daily schedule time in `HH:MM` (defaults to 08:00). */
+  readonly scheduleTime?: string;
+  /** IANA timezone for the schedule (defaults to Europe/London). */
+  readonly scheduleTimeZone?: string;
+  /** Whether automatic scheduling starts enabled by default (defaults to true). */
+  readonly scheduleEnabled?: boolean;
+  /** Cap on notifications sent in one run (1-20, defaults to 5). */
+  readonly maxNotificationsPerRun?: number;
 }
 
 export class ConfigError extends Error {
@@ -159,6 +217,11 @@ export function loadConfig(
     ADZUNA_COUNTRY,
     ADZUNA_MAX_PAGES,
     UK_SPONSOR_REGISTER_URL,
+    JOB_SCOUT_STATE_DIR,
+    JOB_SCOUT_SCHEDULE_TIME,
+    JOB_SCOUT_TIMEZONE,
+    JOB_SCOUT_SCHEDULE_ENABLED,
+    JOB_SCOUT_MAX_NOTIFICATIONS,
   } = parsed.data;
 
   const telegramBotToken = TELEGRAM_BOT_TOKEN ?? BOT_TOKEN;
@@ -184,5 +247,18 @@ export function loadConfig(
     ...(UK_SPONSOR_REGISTER_URL === undefined
       ? {}
       : { sponsorRegisterUrl: UK_SPONSOR_REGISTER_URL }),
+    ...(JOB_SCOUT_STATE_DIR === undefined ? {} : { stateDir: JOB_SCOUT_STATE_DIR }),
+    ...(JOB_SCOUT_SCHEDULE_TIME === undefined
+      ? {}
+      : { scheduleTime: JOB_SCOUT_SCHEDULE_TIME }),
+    ...(JOB_SCOUT_TIMEZONE === undefined
+      ? {}
+      : { scheduleTimeZone: JOB_SCOUT_TIMEZONE }),
+    ...(JOB_SCOUT_SCHEDULE_ENABLED === undefined
+      ? {}
+      : { scheduleEnabled: JOB_SCOUT_SCHEDULE_ENABLED }),
+    ...(JOB_SCOUT_MAX_NOTIFICATIONS === undefined
+      ? {}
+      : { maxNotificationsPerRun: JOB_SCOUT_MAX_NOTIFICATIONS }),
   };
 }

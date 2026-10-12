@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { ConfigError, loadConfig } from "./config/env.js";
-import { createBot } from "./bot/createBot.js";
+import { createBotApp } from "./bot/createBot.js";
 import { createLogger, redactSecrets } from "./utils/logger.js";
 
 function reportFatal(error: unknown): void {
@@ -30,19 +30,27 @@ async function main(): Promise<void> {
   }
 
   const logger = createLogger([config.telegramBotToken]);
-  logger.info(`Starting JobFalcon (Phase 2). Authorised user: ${config.allowedUserId}`);
+  logger.info(`Starting JobFalcon (Phase 3). Authorised user: ${config.allowedUserId}`);
   logger.info('Sponsor register configured', {
     configured: config.sponsorRegisterUrl !== undefined,
   });
 
-  const bot = createBot(config, logger);
+  const { bot, services } = createBotApp(config, logger);
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info(`Received ${signal}. Stopping the bot...`);
+    services.scheduler.stop();
     await bot.stop();
   };
   process.once("SIGINT", () => void shutdown("SIGINT"));
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
+
+  // Start the scheduler BEFORE the polling loop: grammY's bot.start() blocks
+  // in long polling until the bot is stopped, so anything awaited after it
+  // (like a timer arm) would never run while the bot is alive. Safe to fail
+  // the process if the scheduler cannot start: better to surface a broken
+  // schedule than to run silently without alerts.
+  await services.scheduler.start();
 
   await bot.start({
     onStart: (botInfo) => {
