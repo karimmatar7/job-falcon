@@ -136,6 +136,11 @@ export const envSchema = z
         message: "JOB_SCOUT_MAX_NOTIFICATIONS must be between 1 and 20",
       })
       .optional(),
+    CRON_SECRET: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim().length === 0 ? undefined : value,
+      z.string().trim().min(1, "CRON_SECRET must not be empty").optional(),
+    ),
   })
   .superRefine((data, ctx) => {
     if (!data.BOT_TOKEN && !data.TELEGRAM_BOT_TOKEN) {
@@ -176,6 +181,11 @@ export interface AppConfig {
   readonly scheduleEnabled?: boolean;
   /** Cap on notifications sent in one run (1-20, defaults to 5). */
   readonly maxNotificationsPerRun?: number;
+  /**
+   * Shared secret required by the scheduled-search endpoint. Vercel Cron sends
+   * it as `Authorization: Bearer <CRON_SECRET>`; external schedulers must too.
+   */
+  readonly cronSecret?: string;
 }
 
 export class ConfigError extends Error {
@@ -222,6 +232,7 @@ export function loadConfig(
     JOB_SCOUT_TIMEZONE,
     JOB_SCOUT_SCHEDULE_ENABLED,
     JOB_SCOUT_MAX_NOTIFICATIONS,
+    CRON_SECRET,
   } = parsed.data;
 
   const telegramBotToken = TELEGRAM_BOT_TOKEN ?? BOT_TOKEN;
@@ -260,5 +271,6 @@ export function loadConfig(
     ...(JOB_SCOUT_MAX_NOTIFICATIONS === undefined
       ? {}
       : { maxNotificationsPerRun: JOB_SCOUT_MAX_NOTIFICATIONS }),
+    ...(CRON_SECRET === undefined ? {} : { cronSecret: CRON_SECRET }),
   };
 }

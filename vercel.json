@@ -1,4 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "functions": {
+    "api/scheduled-search.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    { "path": "/api/scheduled-search", "schedule": "0 7 * * *" },
+    { "path": "/api/scheduled-search", "schedule": "0 8 * * *" }
+  ]
 }

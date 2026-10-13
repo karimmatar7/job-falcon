@@ -4,6 +4,7 @@ import {
   MAX_RECENT_RUNS,
 } from "../state/stateStore.js";
 import type { RunRecord, RunTrigger, ScheduleSettings, StateStore } from "../state/stateStore.js";
+import { isLockableStateStore } from "../state/stateStore.js";
 import type { Logger } from "../../utils/logger.js";
 import { nextRunAfter } from "./scheduleTime.js";
 import type { JobSearchFn } from "./searchRunner.js";
@@ -37,6 +38,23 @@ export interface SchedulerOptions {
   readonly maxNotificationsPerRun?: number;
   readonly now?: () => Date;
   readonly timers?: SchedulerTimers;
+}
+
+/**
+ * How long a persisted `running` run is trusted before a *different* process
+ * (for example a fresh serverless instance handling the scheduled-search
+ * endpoint) treats it as crashed and takes over. Long-polling restarts recover
+ * immediately via {@link Scheduler.start}; this lease only governs the
+ * stateless/serverless trigger path.
+ */
+export const RUN_LEASE_MS = 10 * 60 * 1000;
+
+/** The result of an out-of-process trigger; `ran` is true only on a real run. */
+export interface DueRunOutcome {
+  /** True only when the search actually executed. */
+  readonly ran: boolean;
+  readonly reason: "ran" | "disabled" | "not-due" | "in-progress" | "already-running";
+  readonly record?: RunRecord;
 }
 
 function errorMessage(error: unknown): string {
@@ -128,6 +146,94 @@ export class Scheduler {
   /** Recompute and persist the next run, and (re)arm the timer when started. */
   async reschedule(): Promise<void> {
     await this.scheduleNext();
+  }
+
+  /**
+   * Execute the scheduled search only when a run is genuinely due.
+   *
+   * This is the entry point for out-of-process triggers (a Vercel Cron job or an
+   * external scheduler calling the protected endpoint). Unlike a timer callback
+   * it can fire at an arbitrary cadence and from overlapping instances, so it is
+   * deliberately idempotent:
+   *
+   * - `/schedule off` (`enabled=false`) never runs.
+   * - Due-ness comes from the persisted `nextRunAt`, so the configured IANA
+   *   timezone and daylight-saving changes are handled by {@link nextRunAfter}
+   *   rather than by the trigger's own wall clock.
+   * - A missing `nextRunAt` is armed (computed and persisted) without running,
+   *   so a fresh stateless deployment self-heals on its first trigger.
+   * - A `running` record left by a crashed process is taken over only after
+   *   {@link RUN_LEASE_MS}; otherwise the call is skipped.
+   * - Duplicate alerts cannot happen: discoveries are de-duplicated by the
+   *   durable seen-set and the completion notice is bound to the run's slot.
+   */
+  async runIfDue(trigger: RunTrigger = "schedule"): Promise<DueRunOutcome> {
+    if (trigger !== "schedule") {
+      return this.toDueOutcome(await this.run(trigger));
+    }
+
+    // A remote store can be shared by several serverless instances; take an
+    // atomic lock so two of them cannot both start the same run.
+    if (!isLockableStateStore(this.store)) {
+      return this.runDueCheckAndRun(trigger);
+    }
+
+    const owner = `${this.now().getTime()}-${Math.random().toString(36).slice(2)}`;
+    const acquired = await this.store.acquireLock(owner, RUN_LEASE_MS);
+    if (!acquired) {
+      this.logger.info("Scheduled run skipped: another instance holds the lock", {
+        trigger,
+      });
+      return { ran: false, reason: "in-progress" };
+    }
+    try {
+      return await this.runDueCheckAndRun(trigger);
+    } finally {
+      await this.store.releaseLock(owner).catch((error) => {
+        this.logger.warn("Could not release the scheduled-search lock", {
+          message: errorMessage(error),
+        });
+      });
+    }
+  }
+
+  /** The due-ness decision and run, shared by the locked and unlocked paths. */
+  private async runDueCheckAndRun(trigger: RunTrigger): Promise<DueRunOutcome> {
+    const state = await this.store.get();
+    if (!state.schedule.settings.enabled) {
+      return { ran: false, reason: "disabled" };
+    }
+
+    await this.recoverStaleRun();
+
+    const refreshed = await this.store.get();
+    const due = parseIso(refreshed.schedule.nextRunAt);
+    if (due === undefined) {
+      const armed = await this.armNextRun();
+      if (armed !== undefined) {
+        this.logger.info("Armed the next scheduled run from an external trigger", {
+          nextRunAt: armed.toISOString(),
+        });
+      }
+      return { ran: false, reason: "not-due" };
+    }
+    if (refreshed.schedule.lastRun?.status === "running") {
+      return { ran: false, reason: "in-progress" };
+    }
+    if (due.getTime() > this.now().getTime()) {
+      return { ran: false, reason: "not-due" };
+    }
+
+    return this.toDueOutcome(await this.run(trigger));
+  }
+
+  private toDueOutcome(record: RunRecord): DueRunOutcome {
+    if (record.status === "skipped") {
+      const reason =
+        record.error?.includes("disabled") === true ? "disabled" : "already-running";
+      return { ran: false, reason, record };
+    }
+    return { ran: true, reason: "ran", record };
   }
 
   /** Run now, regardless of schedule state. Used by tests and manual triggers. */
@@ -374,21 +480,8 @@ export class Scheduler {
       return;
     }
 
-    let next: Date;
-    try {
-      next = nextRunAfter(settings.time, settings.timeZone, this.now());
-    } catch (error) {
-      this.logger.error("Cannot schedule next run: invalid schedule settings", {
-        message: errorMessage(error),
-      });
-      return;
-    }
-
-    if (state.schedule.nextRunAt !== next.toISOString()) {
-      await this.store.update((draft) => {
-        draft.schedule.nextRunAt = next.toISOString();
-      });
-    }
+    const next = await this.armNextRun();
+    if (next === undefined) return;
 
     if (!this.started) {
       this.logger.info("Schedule persisted; timer not armed (scheduler not started)", {
@@ -412,6 +505,34 @@ export class Scheduler {
     });
   }
 
+  /**
+   * Compute the next run from the persisted settings and store it. Returns the
+   * instant, or `undefined` when scheduling is disabled or the settings are
+   * invalid (in which case the previous value is left untouched).
+   */
+  private async armNextRun(): Promise<Date | undefined> {
+    const state = await this.store.get();
+    const settings = state.schedule.settings;
+    if (!settings.enabled) return undefined;
+
+    let next: Date;
+    try {
+      next = nextRunAfter(settings.time, settings.timeZone, this.now());
+    } catch (error) {
+      this.logger.error("Cannot schedule next run: invalid schedule settings", {
+        message: errorMessage(error),
+      });
+      return undefined;
+    }
+
+    if (state.schedule.nextRunAt !== next.toISOString()) {
+      await this.store.update((draft) => {
+        draft.schedule.nextRunAt = next.toISOString();
+      });
+    }
+    return next;
+  }
+
   private clearTimer(): void {
     if (this.timer !== undefined) {
       this.timers.clearTimeout(this.timer);
@@ -423,7 +544,25 @@ export class Scheduler {
     const state = await this.store.get();
     const last = state.schedule.lastRun;
     if (last === undefined || last.status !== "running") return;
+    await this.markInterrupted(last);
+  }
 
+  /**
+   * Serverless variant of {@link recoverInterruptedRun}: only take over a run
+   * whose lease has expired, so an instance that is still genuinely working is
+   * left alone.
+   */
+  private async recoverStaleRun(): Promise<void> {
+    const state = await this.store.get();
+    const last = state.schedule.lastRun;
+    if (last === undefined || last.status !== "running") return;
+    const started = parseIso(last.startedAt);
+    if (started === undefined) return;
+    if (this.now().getTime() - started.getTime() < RUN_LEASE_MS) return;
+    await this.markInterrupted(last);
+  }
+
+  private async markInterrupted(last: RunRecord): Promise<void> {
     const finished: RunRecord = {
       ...last,
       status: "failed",

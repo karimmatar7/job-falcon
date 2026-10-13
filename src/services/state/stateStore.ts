@@ -245,6 +245,31 @@ export interface StateStore {
   update(mutator: (draft: PersistedState) => void): Promise<PersistedState>;
 }
 
+/**
+ * A store that can grant an atomic, time-limited lock. Only remote stores that
+ * may be shared by several processes (for example Upstash Redis) need this;
+ * file/in-memory stores are single-process and serialise their own updates.
+ *
+ * The lock exists to make `Scheduler.runIfDue` safe against overlapping
+ * serverless invocations: without it two cold instances could both decide a run
+ * is due and deliver the same alerts.
+ */
+export interface LockableStateStore extends StateStore {
+  /** Acquire the lock for `owner` if free, for at most `ttlMs`; false if held. */
+  acquireLock(owner: string, ttlMs: number): Promise<boolean>;
+  /** Release the lock only if `owner` still holds it. */
+  releaseLock(owner: string): Promise<void>;
+}
+
+/** Narrow a {@link StateStore} to a {@link LockableStateStore} when supported. */
+export function isLockableStateStore(store: StateStore): store is LockableStateStore {
+  const candidate = store as Partial<LockableStateStore>;
+  return (
+    typeof candidate.acquireLock === "function" &&
+    typeof candidate.releaseLock === "function"
+  );
+}
+
 function cloneState(state: PersistedState): PersistedState {
   return structuredClone(state);
 }

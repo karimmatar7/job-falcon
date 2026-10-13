@@ -9,6 +9,8 @@ import {
   createInitialState,
 } from "../services/state/stateStore.js";
 import type { PersistedState, StateStore } from "../services/state/stateStore.js";
+import { UpstashStateStore } from "../services/state/upstashStateStore.js";
+import { resolveStateBackend } from "../services/state/stateBackend.js";
 import { MessageTracker } from "../services/conversation/messageTracker.js";
 import { SavedVacancyService } from "../services/savedVacancies.js";
 import { Notifier } from "../services/scheduling/notifications.js";
@@ -86,8 +88,25 @@ function buildStateStore(
 
   if (options.persistent === false) return new InMemoryStateStore(initial);
 
+  if (options.stateFilePath !== undefined) {
+    return new FileStateStore({ filePath: options.stateFilePath, logger, initial });
+  }
+
+  const backend = resolveStateBackend(process.env);
+  if (backend.kind === "memory") return new InMemoryStateStore(initial);
+  if (backend.kind === "upstash") {
+    logger.info("Using durable Upstash state store", { key: backend.key });
+    return new UpstashStateStore({
+      url: backend.url,
+      token: backend.token,
+      key: backend.key,
+      logger,
+      initial,
+    });
+  }
+
   return new FileStateStore({
-    filePath: options.stateFilePath ?? path.join(defaultStateDirectory(config), "job-scout-state.json"),
+    filePath: path.join(defaultStateDirectory(config), "job-scout-state.json"),
     logger,
     initial,
   });

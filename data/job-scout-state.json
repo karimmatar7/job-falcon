@@ -4,17 +4,17 @@
     "settings": {
       "enabled": true,
       "alertsPaused": false,
-      "time": "23:08",
+      "time": "15:15",
       "timeZone": "Europe/London",
       "keywords": [
         "software developer"
       ],
       "limit": 10
     },
-    "nextRunAt": "2026-10-13T22:08:00.000Z",
+    "nextRunAt": "2026-10-14T14:15:00.000Z",
     "lastRun": {
-      "startedAt": "2026-10-12T22:08:00.014Z",
-      "finishedAt": "2026-10-12T22:08:02.675Z",
+      "startedAt": "2026-10-13T14:15:00.008Z",
+      "finishedAt": "2026-10-13T14:15:07.627Z",
       "trigger": "schedule",
       "status": "success",
       "discovered": 0,
@@ -72,9 +72,19 @@
         "notified": 0,
         "failed": 0,
         "summarised": 0
+      },
+      {
+        "startedAt": "2026-10-13T14:15:00.008Z",
+        "finishedAt": "2026-10-13T14:15:07.627Z",
+        "trigger": "schedule",
+        "status": "success",
+        "discovered": 0,
+        "notified": 0,
+        "failed": 0,
+        "summarised": 0
       }
     ],
-    "lastCompletionNoticeSlot": "2026-10-12T22:08:00.000Z"
+    "lastCompletionNoticeSlot": "2026-10-13T14:15:00.000Z"
   },
   "notifications": {
     "seen": {
@@ -168,6 +178,14 @@
         "delivered": 0,
         "failed": 0,
         "summarised": 0
+      },
+      {
+        "at": "2026-10-13T14:15:07.627Z",
+        "discovered": 0,
+        "queued": 0,
+        "delivered": 0,
+        "failed": 0,
+        "summarised": 0
       }
     ]
   },
@@ -193,6 +211,21 @@
           {
             "id": 202,
             "at": "2026-10-12T22:08:02.672Z",
+            "direction": "bot"
+          },
+          {
+            "id": 215,
+            "at": "2026-10-13T14:14:55.447Z",
+            "direction": "user"
+          },
+          {
+            "id": 216,
+            "at": "2026-10-13T14:14:55.550Z",
+            "direction": "bot"
+          },
+          {
+            "id": 217,
+            "at": "2026-10-13T14:15:07.623Z",
             "direction": "bot"
           }
         ]

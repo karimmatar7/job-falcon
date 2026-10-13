@@ -30,6 +30,10 @@ it.** Everything weaker is labelled as such.
    - *(optional)* `UK_SPONSOR_REGISTER_URL` - enables employer sponsor-register checks (see below)
    - *(optional)* `JOB_SCOUT_DEBUG_DECISIONS` - per-listing audit log for diagnosing result counts
    - *(optional)* `JOB_SCOUT_SCHEDULE_TIME` / `JOB_SCOUT_TIMEZONE` / `JOB_SCOUT_MAX_NOTIFICATIONS` / `JOB_SCOUT_STATE_DIR` - Phase 3 scheduling defaults (see below)
+   - *(production only)* `CRON_SECRET` - shared secret for the scheduled-search
+     endpoint (Vercel Cron sends it automatically)
+   - *(production only)* `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` -
+     durable state on serverless (see Persistence below)
 3. `npm run dev` (watch mode) or `npm start`.
 
 `.env` is personal data and must never be committed or logged.
@@ -349,18 +353,65 @@ use Telegram's own "Clear history" in the chat menu, which removes both sides.
 All Phase 3 state lives in one JSON document
 (`src/services/state/stateStore.ts`): schedule settings, `nextRunAt`, recent
 runs, seen-job identifiers, the pending-notification queue, per-chat message
-ids, saved vacancies and the small `/save` lookup index. Writes are atomic
-(temp file + rename) and serialised, reads validate the whole document, and a
-corrupt file is quarantined to `*.corrupt-<ts>` so startup never fails. New
-sections added after v1 default to empty, so an existing state file keeps
-loading unchanged. The file lives in `./data` (or the OS temp dir on Vercel)
-and can be relocated with `JOB_SCOUT_STATE_DIR`. No secrets are stored there.
-In serverless/webhook mode the scheduler timer does not run (Vercel has no
-long-running process); commands still answer, but the daily search is designed
-for local long-polling (`npm run dev` / `npm start`).
+ids, saved vacancies and the small `/save` lookup index. Writes are atomic and
+serialised, reads validate the whole document, and corrupt data is backed up
+and replaced with defaults so startup never fails. New sections added after v1
+default to empty, so an existing document keeps loading unchanged. No secrets
+are stored in it.
+
+Three backends implement the same `StateStore` contract
+(`src/services/state/`):
+
+- **file** (default locally): `./data/job-scout-state.json`, relocatable with
+  `JOB_SCOUT_STATE_DIR`; atomic temp-file + rename.
+- **upstash**: the same document in a free [Upstash](https://upstash.com) Redis
+  database, reached over its REST API with `fetch` (no npm dependency). This is
+  required on Vercel, where there is no persistent disk and the file fallback
+  would land in the per-instance, ephemeral `/tmp`. Set
+  `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (used automatically
+  when both are present) or force it with `JOB_SCOUT_STATE_BACKEND=upstash`. It
+  also grants an atomic lock so overlapping serverless invocations cannot run
+  the same search twice.
+- **memory**: `JOB_SCOUT_STATE_BACKEND=memory`; nothing is persisted (tests or
+  throwaway runs only).
+
+### Automatic searches in production (webhook/serverless)
+
+In webhook mode the bot never long-polls and no in-process timer runs, so the
+daily search is driven from outside by a protected endpoint:
+
+- `GET/POST /api/scheduled-search` runs the search **only when it is due**
+  (`Scheduler.runIfDue`). Due-ness comes from the persisted `nextRunAt`, which is
+  computed with `Intl` in the configured IANA timezone, so daylight-saving
+  changes are handled by the runtime's tz database rather than by the trigger's
+  wall clock. Repeated or overlapping triggers cannot double-alert: the
+  seen-set de-duplicates discoveries and the completion notice is bound to the
+  run's slot. `/schedule off` and `/pause` are respected.
+- The endpoint requires `Authorization: Bearer <CRON_SECRET>` (constant-time
+  comparison, never logged). Vercel Cron sends this header automatically once
+  `CRON_SECRET` is set in the project environment.
+- `vercel.json` invokes the endpoint twice a day (07:00 and 08:00 UTC) so the
+  default 08:00 `Europe/London` schedule is covered in both BST and GMT. Vercel
+  **Hobby** can only run a cron job once per day and may fire anywhere within the
+  specified hour, so a run can start up to about an hour late. For exact timing,
+  either upgrade to Pro and replace the entries with a frequent expression
+  (for example `*/5 * * * *`), or point any external scheduler (GitHub Actions,
+  cron-job.org, ...) at the same URL every 15-60 minutes. Extra triggers are
+  harmless because the endpoint is idempotent.
+- The scheduled-search function requests `maxDuration: 60s`. With Fluid Compute
+  (on by default) Hobby allows up to 300s, so a slow sponsor-register download
+  is not cut off mid-run.
+
 
 ## Known limitations
 
+- **Serverless scheduling needs the Upstash backend.** On Vercel the file
+  fallback lands in `/tmp`, which is per-instance and ephemeral, so without
+  `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` the seen-set, `nextRunAt`,
+  saved vacancies and pending queue can be lost between cold starts (risking
+  duplicate alerts). With Upstash configured the document is durable and the
+  scheduled search takes an atomic lock. Local runs (`npm run dev`) are
+  unaffected.
 - A listing that simply does not mention sponsorship stays `unclear`, even if
   the employer *would* sponsor. This is deliberate: absence of evidence is not
   evidence of sponsorship.
@@ -393,12 +444,17 @@ for local long-polling (`npm run dev` / `npm start`).
   sources, advert-quality filtering (`listingQuality.ts`), application-link
   validation (`applicationUrl.ts`), seniority eligibility (`seniority.ts`) and
   saved vacancies / the `/save` index (`savedVacancies.ts`).
-- `src/services/state/` - durable JSON state store (atomic writes).
+- `src/services/state/` - the state document and its stores: file (atomic
+  writes), Upstash Redis (durable, cross-instance lock) and in-memory, plus the
+  backend resolver.
 - `src/services/scheduling/` - schedule/timezone arithmetic, `scheduler.ts`,
   `searchRunner.ts` (cached pipeline), `notifications.ts` (seen-set, pending
   queue, delivery), `jobIdentity.ts` (stable job fingerprints).
 - `src/services/conversation/` - message-id tracking and `/empty` cleanup.
 - `src/models/` - Zod schemas / types (`Vacancy`, `Profile`).
+- `api/` - Vercel Serverless Function entry points: the Telegram webhook
+  (`api/webhook.ts`) and the protected scheduled-search trigger
+  (`api/scheduled-search.ts`).
 - `tests/` - Vitest unit tests for the pipeline, sources, classifier, employer
   identity, sponsor register, scheduler, notifications, saved vacancies,
   `/empty` and stores.

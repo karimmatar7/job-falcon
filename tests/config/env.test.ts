@@ -162,4 +162,14 @@ describe("loadConfig", () => {
       loadConfig({ ...VALID_ENV, UK_SPONSOR_REGISTER_URL: "not-a-url" }),
     ).toThrow(ConfigError);
   });
+
+  it("parses an optional cron secret", () => {
+    const config = loadConfig({ ...VALID_ENV, CRON_SECRET: "a-random-cron-secret" });
+    expect(config.cronSecret).toBe("a-random-cron-secret");
+  });
+
+  it("leaves the cron secret undefined when unset or blank", () => {
+    expect(loadConfig(VALID_ENV).cronSecret).toBeUndefined();
+    expect(loadConfig({ ...VALID_ENV, CRON_SECRET: "   " }).cronSecret).toBeUndefined();
+  });
 });
